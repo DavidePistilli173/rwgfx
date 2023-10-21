@@ -35,17 +35,74 @@ impl Vertex {
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [0.5, 0.5, 0.0],
+        position: [-0.0868241, 0.49240386, 0.0],
+        colour: [0.5, 0.0, 0.0],
+    }, // A
+    Vertex {
+        position: [-0.49513406, 0.06958647, 0.0],
+        colour: [0.5, 0.5, 0.0],
+    }, // B
+    Vertex {
+        position: [-0.21918549, -0.44939706, 0.0],
+        colour: [0.0, 0.5, 0.0],
+    }, // C
+    Vertex {
+        position: [0.35966998, -0.3473291, 0.0],
+        colour: [0.0, 0.5, 0.5],
+    }, // D
+    Vertex {
+        position: [0.44147372, 0.2347359, 0.0],
+        colour: [0.0, 0.0, 0.5],
+    }, // E
+];
+
+const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
+
+const VERTICES2: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
         colour: [1.0, 0.0, 0.0],
-    },
+    }, // A
     Vertex {
-        position: [-0.5, -0.5, 0.0],
-        colour: [0.0, 1.0, 0.0],
-    },
+        position: [0.2, 0.2, 0.0],
+        colour: [1.0, 1.0, 0.0],
+    }, // B
     Vertex {
-        position: [0.5, -0.5, 0.0],
-        colour: [0.0, 0.0, 1.0],
-    },
+        position: [-0.2, 0.2, 0.0],
+        colour: [1.0, 1.0, 0.0],
+    }, // C
+    Vertex {
+        position: [0.5, 0.2, 0.0],
+        colour: [1.0, 0.0, 0.0],
+    }, // D
+    Vertex {
+        position: [0.3, -0.2, 0.0],
+        colour: [1.0, 1.0, 0.0],
+    }, // E
+    Vertex {
+        position: [0.4, -0.5, 0.0],
+        colour: [1.0, 0.0, 0.0],
+    }, // F
+    Vertex {
+        position: [0.0, -0.2, 0.0],
+        colour: [1.0, 1.0, 0.0],
+    }, // G
+    Vertex {
+        position: [-0.4, -0.5, 0.0],
+        colour: [1.0, 0.0, 0.0],
+    }, // H
+    Vertex {
+        position: [-0.3, -0.2, 0.0],
+        colour: [1.0, 1.0, 0.0],
+    }, // I
+    Vertex {
+        position: [-0.5, 0.2, 0.0],
+        colour: [1.0, 0.0, 0.0],
+    }, // L
+];
+
+const INDICES2: &[u16] = &[
+    2, 1, 0, 1, 4, 3, 6, 5, 4, 8, 7, 6, 2, 9, 8, 8, 6, 2, 6, 1, 2, 6, 4, 1,
 ];
 
 struct State {
@@ -59,6 +116,10 @@ struct State {
     render_pipeline_2: wgpu::RenderPipeline,
     active_pipeline: u8,
     vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    vertex_buffer_2: wgpu::Buffer,
+    index_buffer_2: wgpu::Buffer,
+    active_mesh: u8,
     logger: rwlog::sender::Logger,
     // Window must be dropped after surface.
     window: Window,
@@ -143,6 +204,9 @@ impl State {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
+
+        let diffuse_bytes = include_bytes!("img/happy_tree.png");
+        let diffuse_image = image::load_from_memory(diffuse_bytes);
 
         // Render pipeline #1
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader/base.wgsl"));
@@ -238,6 +302,24 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let vertex_buffer_2 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Secondary vertex buffer"),
+            contents: bytemuck::cast_slice(VERTICES2),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer_2 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Secondary index buffer"),
+            contents: bytemuck::cast_slice(INDICES2),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         Ok(Self {
             window,
             surface,
@@ -254,6 +336,10 @@ impl State {
             render_pipeline_2,
             active_pipeline: 0,
             vertex_buffer,
+            index_buffer,
+            vertex_buffer_2,
+            index_buffer_2,
+            active_mesh: 0,
             logger,
             size,
         })
@@ -287,17 +373,40 @@ impl State {
             match self.active_pipeline {
                 0 => {
                     render_pass.set_pipeline(&self.render_pipeline);
-                    render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                    let mut indices_num: u32 = 0;
+
+                    match self.active_mesh {
+                        0 => {
+                            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(
+                                self.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
+                            indices_num = INDICES.len() as u32;
+                        }
+                        1 => {
+                            render_pass.set_vertex_buffer(0, self.vertex_buffer_2.slice(..));
+                            render_pass.set_index_buffer(
+                                self.index_buffer_2.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
+                            indices_num = INDICES2.len() as u32;
+                        }
+                        _ => {
+                            rwlog::rel_err!(&self.logger, "Invalid mesh!");
+                        }
+                    }
+
+                    render_pass.draw_indexed(0..indices_num as u32, 0, 0..1);
                 }
                 1 => {
                     render_pass.set_pipeline(&self.render_pipeline_2);
+                    render_pass.draw(0..3 as u32, 0..1);
                 }
                 _ => {
                     rwlog::rel_err!(&self.logger, "Invalid render pipeline!");
                 }
             }
-
-            render_pass.draw(0..VERTICES.len() as u32, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -363,6 +472,28 @@ pub async fn run(logger: rwlog::sender::Logger) {
                             1 => 0,
                             _ => 0,
                         };
+                    }
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key0),
+                                ..
+                            },
+                        ..
+                    } => {
+                        state.active_mesh = 0;
+                    }
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Key1),
+                                ..
+                            },
+                        ..
+                    } => {
+                        state.active_mesh = 1;
                     }
                     _ => (),
                 }
