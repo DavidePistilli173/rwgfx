@@ -18,7 +18,7 @@ impl Vertex for Plain {
     /// Get the buffer layout for this type of vertex.
     /// # Example
     /// ```
-    /// use rwgfx::vertex::Plain;
+    /// use rwgfx::vertex::{Vertex, Plain};
     ///
     /// let buffer_layout = Plain::desc();
     /// ```
@@ -49,7 +49,7 @@ impl Vertex for Coloured {
     /// Get the buffer layout for this type of vertex.
     /// # Example
     /// ```
-    /// use rwgfx::vertex::Coloured;
+    /// use rwgfx::vertex::{Vertex, Coloured};
     ///
     /// let buffer_layout = Coloured::desc();
     /// ```
@@ -87,7 +87,7 @@ impl Vertex for Textured {
     /// Get the buffer layout for this type of vertex.
     /// # Example
     /// ```
-    /// use rwgfx::vertex::Textured;
+    /// use rwgfx::vertex::{Vertex, Textured};
     ///
     /// let buffer_layout = Textured::desc();
     /// ```
