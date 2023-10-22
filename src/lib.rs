@@ -8,81 +8,27 @@ use winit::{
 };
 
 mod texture;
+pub mod vertex;
+use vertex::Vertex;
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    colour: [f32; 3],
-}
-
-impl Vertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex2 {
-    position: [f32; 3],
-    tex_coords: [f32; 2],
-}
-
-impl Vertex2 {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex2>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-            ],
-        }
-    }
-}
-
-const VERTICES: &[Vertex2] = &[
-    Vertex2 {
+const VERTICES: &[vertex::Textured] = &[
+    vertex::Textured {
         position: [-0.0868241, 0.49240386, 0.0],
         tex_coords: [0.4131759, 0.00759614],
     }, // A
-    Vertex2 {
+    vertex::Textured {
         position: [-0.49513406, 0.06958647, 0.0],
         tex_coords: [0.0048659444, 0.43041354],
     }, // B
-    Vertex2 {
+    vertex::Textured {
         position: [-0.21918549, -0.44939706, 0.0],
         tex_coords: [0.28081453, 0.949397],
     }, // C
-    Vertex2 {
+    vertex::Textured {
         position: [0.35966998, -0.3473291, 0.0],
         tex_coords: [0.85967, 0.84732914],
     }, // D
-    Vertex2 {
+    vertex::Textured {
         position: [0.44147372, 0.2347359, 0.0],
         tex_coords: [0.9414737, 0.2652641],
     }, // E
@@ -90,44 +36,44 @@ const VERTICES: &[Vertex2] = &[
 
 const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
-const VERTICES2: &[Vertex2] = &[
-    Vertex2 {
+const VERTICES2: &[vertex::Textured] = &[
+    vertex::Textured {
         position: [0.0, 0.5, 0.0],
         tex_coords: [1.0, 0.0],
     }, // A
-    Vertex2 {
+    vertex::Textured {
         position: [0.2, 0.2, 0.0],
         tex_coords: [1.0, 1.0],
     }, // B
-    Vertex2 {
+    vertex::Textured {
         position: [-0.2, 0.2, 0.0],
         tex_coords: [1.0, 1.0],
     }, // C
-    Vertex2 {
+    vertex::Textured {
         position: [0.5, 0.2, 0.0],
         tex_coords: [1.0, 0.0],
     }, // D
-    Vertex2 {
+    vertex::Textured {
         position: [0.3, -0.2, 0.0],
         tex_coords: [1.0, 1.0],
     }, // E
-    Vertex2 {
+    vertex::Textured {
         position: [0.4, -0.5, 0.0],
         tex_coords: [1.0, 0.0],
     }, // F
-    Vertex2 {
+    vertex::Textured {
         position: [0.0, -0.2, 0.0],
         tex_coords: [1.0, 1.0],
     }, // G
-    Vertex2 {
+    vertex::Textured {
         position: [-0.4, -0.5, 0.0],
         tex_coords: [1.0, 0.0],
     }, // H
-    Vertex2 {
+    vertex::Textured {
         position: [-0.3, -0.2, 0.0],
         tex_coords: [1.0, 1.0],
     }, // I
-    Vertex2 {
+    vertex::Textured {
         position: [-0.5, 0.2, 0.0],
         tex_coords: [1.0, 0.0],
     }, // L
@@ -298,7 +244,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[Vertex2::desc()],
+                buffers: &[vertex::Textured::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
