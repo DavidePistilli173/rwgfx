@@ -10,8 +10,8 @@ pub trait Vertex {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Plain {
-    /// Vertex coordinates (x, y, z).
-    pub position: [f32; 3],
+    /// Vertex coordinates (x, y).
+    pub position: [f32; 2],
 }
 
 impl Vertex for Plain {
@@ -29,7 +29,7 @@ impl Vertex for Plain {
             attributes: &[wgpu::VertexAttribute {
                 offset: 0,
                 shader_location: 0,
-                format: wgpu::VertexFormat::Float32x3,
+                format: wgpu::VertexFormat::Float32x2,
             }],
         }
     }
@@ -39,8 +39,8 @@ impl Vertex for Plain {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Coloured {
-    /// Vertex coordinates (x, y, z).
-    pub position: [f32; 3],
+    /// Vertex coordinates (x, y).
+    pub position: [f32; 2],
     /// Vertex colour (r, g, b).
     pub colour: [f32; 3],
 }
@@ -61,10 +61,10 @@ impl Vertex for Coloured {
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
@@ -77,8 +77,8 @@ impl Vertex for Coloured {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Textured {
-    /// Vertex coordinates (x, y, z).
-    pub position: [f32; 3],
+    /// Vertex coordinates (x, y).
+    pub position: [f32; 2],
     /// Texture coordinates (x, y).
     pub tex_coords: [f32; 2],
 }
@@ -99,10 +99,10 @@ impl Vertex for Textured {
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x2,
                 },

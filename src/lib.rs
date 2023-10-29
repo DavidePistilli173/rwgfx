@@ -1,3 +1,4 @@
+use cgmath::Vector3;
 use image::GenericImageView;
 use texture::Texture;
 use wgpu::util::DeviceExt;
@@ -7,29 +8,35 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+pub mod animation;
+pub mod button;
+pub mod camera;
+pub mod shader;
 mod texture;
 pub mod vertex;
+
+use camera::Camera;
 use vertex::Vertex;
 
 const VERTICES: &[vertex::Textured] = &[
     vertex::Textured {
-        position: [-0.0868241, 0.49240386, 0.0],
+        position: [-0.0868241, 0.49240386],
         tex_coords: [0.4131759, 0.00759614],
     }, // A
     vertex::Textured {
-        position: [-0.49513406, 0.06958647, 0.0],
+        position: [-0.49513406, 0.06958647],
         tex_coords: [0.0048659444, 0.43041354],
     }, // B
     vertex::Textured {
-        position: [-0.21918549, -0.44939706, 0.0],
+        position: [-0.21918549, -0.44939706],
         tex_coords: [0.28081453, 0.949397],
     }, // C
     vertex::Textured {
-        position: [0.35966998, -0.3473291, 0.0],
+        position: [0.35966998, -0.3473291],
         tex_coords: [0.85967, 0.84732914],
     }, // D
     vertex::Textured {
-        position: [0.44147372, 0.2347359, 0.0],
+        position: [0.44147372, 0.2347359],
         tex_coords: [0.9414737, 0.2652641],
     }, // E
 ];
@@ -38,43 +45,43 @@ const INDICES: &[u16] = &[0, 1, 4, 1, 2, 4, 2, 3, 4];
 
 const VERTICES2: &[vertex::Textured] = &[
     vertex::Textured {
-        position: [0.0, 0.5, 0.0],
+        position: [0.0, 0.5],
         tex_coords: [1.0, 0.0],
     }, // A
     vertex::Textured {
-        position: [0.2, 0.2, 0.0],
+        position: [0.2, 0.2],
         tex_coords: [1.0, 1.0],
     }, // B
     vertex::Textured {
-        position: [-0.2, 0.2, 0.0],
+        position: [-0.2, 0.2],
         tex_coords: [1.0, 1.0],
     }, // C
     vertex::Textured {
-        position: [0.5, 0.2, 0.0],
+        position: [0.5, 0.2],
         tex_coords: [1.0, 0.0],
     }, // D
     vertex::Textured {
-        position: [0.3, -0.2, 0.0],
+        position: [0.3, -0.2],
         tex_coords: [1.0, 1.0],
     }, // E
     vertex::Textured {
-        position: [0.4, -0.5, 0.0],
+        position: [0.4, -0.5],
         tex_coords: [1.0, 0.0],
     }, // F
     vertex::Textured {
-        position: [0.0, -0.2, 0.0],
+        position: [0.0, -0.2],
         tex_coords: [1.0, 1.0],
     }, // G
     vertex::Textured {
-        position: [-0.4, -0.5, 0.0],
+        position: [-0.4, -0.5],
         tex_coords: [1.0, 0.0],
     }, // H
     vertex::Textured {
-        position: [-0.3, -0.2, 0.0],
+        position: [-0.3, -0.2],
         tex_coords: [1.0, 1.0],
     }, // I
     vertex::Textured {
-        position: [-0.5, 0.2, 0.0],
+        position: [-0.5, 0.2],
         tex_coords: [1.0, 0.0],
     }, // L
 ];
@@ -101,6 +108,7 @@ struct State {
     diffuse_texture: Texture,
     diffuse_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
+    camera: Camera,
     logger: rwlog::sender::Logger,
     // Window must be dropped after surface.
     window: Window,
@@ -232,6 +240,18 @@ impl State {
 
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+
+        let camera = Camera {
+            eye: (size.width as f32 / 2.0, size.height as f32 / 2.0, -1.0).into(),
+            target: (size.width as f32 / 2.0, size.height as f32 / 2.0, 0.0).into(),
+            up: Vector3::unit_y(),
+            left: 0.0,
+            right: size.width as f32,
+            bottom: size.height as f32,
+            top: 0.0,
+            znear: 0.1,
+            zfar: 100.0,
+        };
 
         // Render pipeline #1
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader/base.wgsl"));
@@ -380,6 +400,7 @@ impl State {
             diffuse_texture,
             diffuse_bind_group,
             depth_texture,
+            camera,
             logger,
             size,
         })
