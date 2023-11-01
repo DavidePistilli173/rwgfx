@@ -1,5 +1,6 @@
-use cgmath::Vector3;
+use cgmath::{Point2, Vector2, Vector3};
 use image::GenericImageView;
+use shader::general::CameraUniform;
 use texture::Texture;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -15,6 +16,7 @@ pub mod shader;
 mod texture;
 pub mod vertex;
 
+use button::Button;
 use camera::Camera;
 use vertex::Vertex;
 
@@ -109,6 +111,10 @@ struct State {
     diffuse_bind_group: wgpu::BindGroup,
     depth_texture: Texture,
     camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    button: Button,
     logger: rwlog::sender::Logger,
     // Window must be dropped after surface.
     window: Window,
@@ -253,6 +259,40 @@ impl State {
             zfar: 100.0,
         };
 
+        let camera_uniform = CameraUniform {
+            view_proj: camera.build_view_projection_matrix().into(),
+        };
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("camera_buffer"),
+            contents: bytemuck::cast_slice(&[camera_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("camera_bind_group_layout"),
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+            label: Some("camera_bind_group"),
+        });
+
         // Render pipeline #1
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader/base.wgsl"));
         let render_pipeline_layout =
@@ -304,11 +344,11 @@ impl State {
         });
 
         // Render pipeline #2
-        let shader_2 = device.create_shader_module(wgpu::include_wgsl!("shader/base2.wgsl"));
+        let shader_2 = device.create_shader_module(wgpu::include_wgsl!("shader/general.wgsl"));
         let render_pipeline_layout_2 =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Secondary render pipeline layout."),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -318,7 +358,7 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &shader_2,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[vertex::Plain::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader_2,
@@ -377,6 +417,19 @@ impl State {
             usage: wgpu::BufferUsages::INDEX,
         });
 
+        let button = Button::new(
+            &device,
+            Point2::<f32> { x: 0.0, y: 0.0 },
+            Vector2::<f32> { x: 1.0, y: 1.0 },
+            1.0,
+            wgpu::Color {
+                r: 0.5,
+                g: 0.05,
+                b: 0.05,
+                a: 1.0,
+            },
+        );
+
         Ok(Self {
             window,
             surface,
@@ -401,6 +454,10 @@ impl State {
             diffuse_bind_group,
             depth_texture,
             camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
+            button,
             logger,
             size,
         })
@@ -470,7 +527,8 @@ impl State {
                 }
                 1 => {
                     render_pass.set_pipeline(&self.render_pipeline_2);
-                    render_pass.draw(0..3 as u32, 0..1);
+                    render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    self.button.draw(&mut render_pass);
                 }
                 _ => {
                     rwlog::rel_err!(&self.logger, "Invalid render pipeline!");

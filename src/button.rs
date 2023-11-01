@@ -28,6 +28,13 @@ pub struct Button {
 }
 
 impl Button {
+    /// Draw the button.
+    pub fn draw<'a, 'b>(&'a self, render_pass: &'b mut wgpu::RenderPass<'a>) {
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+    }
+
     /// Create a new button.
     /// # Example
     /// ```
@@ -47,10 +54,10 @@ impl Button {
                 position: [0.0, 0.0],
             },
             vertex::Plain {
-                position: [0.0, size.y],
+                position: [0.0, -size.y],
             },
             vertex::Plain {
-                position: [size.x, size.y],
+                position: [size.x, -size.y],
             },
             vertex::Plain {
                 position: [size.x, 0.0],
@@ -95,6 +102,17 @@ impl Button {
             vertex_buffer,
             index_buffer,
             uniform_buffer,
+        }
+    }
+
+    /// Update the button's logic.
+    pub fn update(&mut self, elapsed: Duration) {
+        if !self.position.complete() {
+            self.position.update(elapsed);
+        }
+
+        if !self.size.complete() {
+            self.size.update(elapsed);
         }
     }
 }
