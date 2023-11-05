@@ -1,6 +1,6 @@
 use cgmath::{Point2, Vector2, Vector3};
 use image::GenericImageView;
-use shader::general::CameraUniform;
+use shader::general::{CameraUniform, MeshUniform};
 use texture::Texture;
 use wgpu::util::DeviceExt;
 use winit::{
@@ -250,18 +250,41 @@ impl State {
         let camera = Camera {
             eye: (size.width as f32 / 2.0, size.height as f32 / 2.0, -1.0).into(),
             target: (size.width as f32 / 2.0, size.height as f32 / 2.0, 0.0).into(),
-            up: Vector3::unit_y(),
+            up: -Vector3::unit_y(),
             left: 0.0,
             right: size.width as f32,
             bottom: size.height as f32,
             top: 0.0,
-            znear: 0.1,
+            znear: 0.0,
             zfar: 100.0,
         };
 
         let camera_uniform = CameraUniform {
             view_proj: camera.build_view_projection_matrix().into(),
         };
+
+        rwlog::trace!(
+            &logger,
+            "Frustum limits: width={}; height={}",
+            size.width,
+            size.height
+        );
+        rwlog::trace!(
+            &logger,
+            "View-Projection matrix: {:?}",
+            camera.build_view_projection_matrix()
+        );
+        rwlog::trace!(
+            &logger,
+            "V0: {:?}",
+            camera.build_view_projection_matrix()
+                * cgmath::Vector4::<f32> {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 2.0,
+                    w: 1.0
+                }
+        );
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("camera_buffer"),
@@ -292,6 +315,12 @@ impl State {
             }],
             label: Some("camera_bind_group"),
         });
+
+        let mesh_uniform_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &MeshUniform::layout_descriptor(),
+                label: Some("mesh_bind_group_layout"),
+            });
 
         // Render pipeline #1
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader/base.wgsl"));
@@ -348,7 +377,7 @@ impl State {
         let render_pipeline_layout_2 =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Secondary render pipeline layout."),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &mesh_uniform_layout],
                 push_constant_ranges: &[],
             });
 
@@ -419,15 +448,10 @@ impl State {
 
         let button = Button::new(
             &device,
-            Point2::<f32> { x: 0.0, y: 0.0 },
-            Vector2::<f32> { x: 1.0, y: 1.0 },
-            1.0,
-            wgpu::Color {
-                r: 0.5,
-                g: 0.05,
-                b: 0.05,
-                a: 1.0,
-            },
+            Point2::<f32> { x: 350.0, y: 250.0 },
+            Vector2::<f32> { x: 100.0, y: 100.0 },
+            -75.0,
+            [0.5, 0.05, 0.05, 1.0],
         );
 
         Ok(Self {

@@ -1,3 +1,4 @@
+use crate::shader::general::MeshUniform;
 use crate::vertex;
 use crate::{animation::Animated, shader::general};
 use cgmath::{Point2, Vector2};
@@ -16,20 +17,27 @@ pub struct Button {
     /// Z-index of the button, determines which UI element is drawn on top.
     z_index: f32,
     /// Background colour of the button.
-    back_colour: wgpu::Color,
+    back_colour: [f32; 4],
     /// Vertex buffer data expressed in the local coordinate frame of the button.
     vertices: [vertex::Plain; 4],
+    /// Mesh data for the shader.
+    mesh_uniform: MeshUniform,
     /// Vertex buffer.
     vertex_buffer: wgpu::Buffer,
     /// Index buffer.
     index_buffer: wgpu::Buffer,
-    /// Uniform buffer.
-    uniform_buffer: wgpu::Buffer,
+    /// Mesh uniform buffer.
+    mesh_uniform_buffer: wgpu::Buffer,
+    /// Layout of the mesh uniform.
+    mesh_uniform_layout: wgpu::BindGroupLayout,
+    /// Bind group for the mesh uniform.
+    mesh_uniform_bind_group: wgpu::BindGroup,
 }
 
 impl Button {
     /// Draw the button.
     pub fn draw<'a, 'b>(&'a self, render_pass: &'b mut wgpu::RenderPass<'a>) {
+        render_pass.set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
         render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
@@ -47,17 +55,17 @@ impl Button {
         position: Point2<f32>,
         size: Vector2<f32>,
         z_index: f32,
-        back_colour: wgpu::Color,
+        back_colour: [f32; 4],
     ) -> Self {
         let vertices = [
             vertex::Plain {
                 position: [0.0, 0.0],
             },
             vertex::Plain {
-                position: [0.0, -size.y],
+                position: [0.0, size.y],
             },
             vertex::Plain {
-                position: [size.x, -size.y],
+                position: [size.x, size.y],
             },
             vertex::Plain {
                 position: [size.x, 0.0],
@@ -76,21 +84,27 @@ impl Button {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let uniform = general::MeshUniform {
-            position: position.into(),
-            z: z_index,
-            back_colour: [
-                back_colour.r as f32,
-                back_colour.g as f32,
-                back_colour.b as f32,
-                back_colour.a as f32,
-            ],
-        };
+        let mesh_uniform = general::MeshUniform::new(position.into(), z_index, back_colour);
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let mesh_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Button uniform buffer"),
-            contents: bytemuck::cast_slice(&[uniform]),
+            contents: bytemuck::cast_slice(&[mesh_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let mesh_uniform_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &MeshUniform::layout_descriptor(),
+                label: Some("mesh_bind_group_layout"),
+            });
+
+        let mesh_uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &mesh_uniform_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: mesh_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("mesh_uniform_bind_group"),
         });
 
         Self {
@@ -99,9 +113,12 @@ impl Button {
             z_index,
             back_colour,
             vertices,
+            mesh_uniform,
             vertex_buffer,
             index_buffer,
-            uniform_buffer,
+            mesh_uniform_buffer,
+            mesh_uniform_layout,
+            mesh_uniform_bind_group,
         }
     }
 
