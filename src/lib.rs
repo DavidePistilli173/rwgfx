@@ -10,8 +10,10 @@ use winit::{
 };
 
 pub mod animation;
+pub mod application;
 pub mod button;
 pub mod camera;
+pub mod pipelines;
 pub mod shader;
 mod texture;
 pub mod vertex;
