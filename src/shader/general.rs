@@ -1,3 +1,5 @@
+//! Data for the default "general" shader.
+
 /// Uniform used for the general shader camera data.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
