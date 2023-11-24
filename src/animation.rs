@@ -1,3 +1,5 @@
+//! Animation handling.
+
 use chrono::Duration;
 use std::ops::{AddAssign, Mul, Sub};
 
@@ -45,10 +47,10 @@ where
     }
 
     /// Update the state of the animated data as a function of time.
-    pub fn update(&mut self, elapsed: Duration) {
+    pub fn update(&mut self, elapsed: &Duration) {
         let remaining_time = self.duration - self.elapsed_time;
         // Check if the remaining animation time is less than the elapsed time given as input.
-        if remaining_time <= elapsed {
+        if remaining_time <= *elapsed {
             self.current = self.target;
             self.elapsed_time = self.duration;
         } else {
@@ -56,7 +58,7 @@ where
                 elapsed.num_milliseconds() as f32 / remaining_time.num_milliseconds() as f32;
             let distance = self.target - self.current;
             self.current += distance * progress_perc;
-            self.elapsed_time = self.elapsed_time + elapsed;
+            self.elapsed_time = self.elapsed_time + *elapsed;
         }
     }
 }

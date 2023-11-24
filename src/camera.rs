@@ -1,3 +1,5 @@
+//! Camera
+
 use crate::shader;
 use cgmath::Matrix4;
 use wgpu::util::DeviceExt;
@@ -35,10 +37,17 @@ pub struct Camera {
 }
 
 impl Camera {
+    /// Get the camera's bind group.
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+
+    /// Get the camera's bind group layout.
     pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
         &self.bind_group_layout
     }
 
+    /// Create a new orthographic camera.
     pub fn new_orthographic(
         device: &wgpu::Device,
         left: f32,

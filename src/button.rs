@@ -1,3 +1,5 @@
+//! Basic button widget.
+
 use crate::shader::general::MeshUniform;
 use crate::vertex;
 use crate::{animation::Animated, shader::general};
@@ -44,12 +46,6 @@ impl Button {
     }
 
     /// Create a new button.
-    /// # Example
-    /// ```
-    /// use rwgfx::button::Button;
-    ///
-    /// let button = Button::new(Point2{x: 5.0, y: 10.0}, Vector2{x: 100.0, y: 25.0}, 1.0, [0.5, 0.0, 0.0]);
-    /// ```
     pub fn new(
         device: &wgpu::Device,
         position: Point2<f32>,
@@ -123,7 +119,7 @@ impl Button {
     }
 
     /// Update the button's logic.
-    pub fn update(&mut self, elapsed: Duration) {
+    pub fn update(&mut self, elapsed: &Duration) {
         if !self.position.complete() {
             self.position.update(elapsed);
         }

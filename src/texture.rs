@@ -1,6 +1,9 @@
+//! Textures.
+
 use anyhow::*;
 use image::GenericImageView;
 
+/// Structure containing texture information.
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -8,8 +11,10 @@ pub struct Texture {
 }
 
 impl Texture {
+    /// Format of the depth textures.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+    /// Create a depth texture.
     pub fn create_depth_texture(
         device: &wgpu::Device,
         config: &wgpu::SurfaceConfiguration,
@@ -55,6 +60,7 @@ impl Texture {
         }
     }
 
+    /// Create a texture from a slice of raw bytes.
     pub fn from_bytes(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -65,6 +71,7 @@ impl Texture {
         Self::from_image(device, queue, &img, Some(label))
     }
 
+    /// Create a texture from an image.
     pub fn from_image(
         device: &wgpu::Device,
         queue: &wgpu::Queue,

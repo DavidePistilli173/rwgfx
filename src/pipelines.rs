@@ -1,27 +1,31 @@
+//! Pipeline utility code and deafult pipeline IDs.
+
+/// ID of the general pipeline.
+pub const ID_GENERAL: u64 = 1;
+
+/// Macro for creating a render pipeline with default options.
 #[macro_export]
 macro_rules! create_default_render_pipeline {
-    ($device:expr, $surface_config:expr, $shader_path:tt, $bind_group_layouts:expr, $vertex_buffer_layouts:expr) => {
-        let shader = device.create_shader_module(wgpu::include_wgsl!(shader_path));
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(&format!("{shader_path} render pipeline layout.")),
-                bind_group_layouts,
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some(&format!("{shader_path} render pipeline")),
-            layout: Some(&render_pipeline_layout),
+    ($device:expr, $surface_config:expr, $shader_name:expr, $shader_obj:expr, $bind_group_layouts:expr, $vertex_buffer_layouts:expr) => {
+        $device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(&format!("{} render pipeline", $shader_name)),
+            layout: Some(
+                &$device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some(&format!("{} render pipeline layout.", $shader_name)),
+                    bind_group_layouts: $bind_group_layouts,
+                    push_constant_ranges: &[],
+                }),
+            ),
             vertex: wgpu::VertexState {
-                module: &shader,
+                module: &$shader_obj,
                 entry_point: "vs_main",
-                buffers: vertex_buffer_layouts,
+                buffers: $vertex_buffer_layouts,
             },
             fragment: Some(wgpu::FragmentState {
-                module: &shader,
+                module: &$shader_obj,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_config.format,
+                    format: $surface_config.format,
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],

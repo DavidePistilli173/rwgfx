@@ -1,4 +1,4 @@
-//! Module containing different types of vertices.
+//! Different types of vertices.
 
 /// Trait common to all vertex types.
 pub trait Vertex {
