@@ -36,5 +36,6 @@ fn vs_main(
 // Fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return mesh.back_colour + vec4<f32>(1.0 * mesh.overlay_alpha, 1.0 * mesh.overlay_alpha, 1.0 * mesh.overlay_alpha, 0.0);
+    return vec4<f32>(vec3<f32>(mesh.back_colour.x, mesh.back_colour.y, mesh.back_colour.z) * (1.0 - mesh.overlay_alpha), mesh.back_colour.w) + 
+           vec4<f32>(vec3<f32>(1.0, 1.0, 1.0) * mesh.overlay_alpha, 0.0);
 }

@@ -59,10 +59,14 @@ where
             self.current = self.target;
             self.elapsed_time = self.duration;
         } else {
-            let progress_perc: f32 =
-                elapsed.num_milliseconds() as f32 / remaining_time.num_milliseconds() as f32;
-            let distance = self.target - self.current;
-            self.current += distance * progress_perc;
+            let elapsed_nanoseconds: f32 = elapsed.num_nanoseconds().unwrap_or(i64::MAX) as f32;
+            let remaining_nanoseconds: f32 =
+                remaining_time.num_nanoseconds().unwrap_or(i64::MAX) as f32;
+            let progress_perc: f32 = elapsed_nanoseconds / remaining_nanoseconds;
+            if !progress_perc.is_nan() {
+                let distance = self.target - self.current;
+                self.current += distance * progress_perc;
+            }
             self.elapsed_time = self.elapsed_time + *elapsed;
         }
     }
