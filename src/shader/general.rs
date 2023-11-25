@@ -16,8 +16,8 @@ pub struct MeshUniform {
     pub position: [f32; 2],
     /// Z coordinate.
     pub z: f32,
-    /// Padding bytes for 16-bytes alignment.
-    padding: f32,
+    /// Alpha value of the white overlay.
+    pub overlay_alpha: f32,
     /// Background colour.
     pub back_colour: [f32; 4],
 }
@@ -36,12 +36,12 @@ impl MeshUniform {
         }]
     }
 
-    pub fn new(position: [f32; 2], z: f32, back_colour: [f32; 4]) -> Self {
+    pub fn new(position: [f32; 2], z: f32, overlay_alpha: f32, back_colour: [f32; 4]) -> Self {
         Self {
             position,
             z,
+            overlay_alpha,
             back_colour,
-            padding: 0.0,
         }
     }
 }

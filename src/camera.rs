@@ -34,6 +34,8 @@ pub struct Camera {
     bind_group_layout: wgpu::BindGroupLayout,
     /// Actual bind group for the camera uniform.
     bind_group: wgpu::BindGroup,
+    /// If true, the uniform buffer needs to be updated.
+    uniform_buffer_needs_update: bool,
 }
 
 impl Camera {
@@ -101,6 +103,29 @@ impl Camera {
             buffer,
             bind_group_layout,
             bind_group,
+            uniform_buffer_needs_update: false,
+        }
+    }
+
+    /// Rebuild the orthographic camera matrix with new frustum limits.
+    pub fn rebuild_orthographic(
+        &mut self,
+        left: f32,
+        right: f32,
+        top: f32,
+        bottom: f32,
+        near: f32,
+        far: f32,
+    ) {
+        self.uniform_data.view_proj = cgmath::ortho(left, right, bottom, top, near, far).into();
+        self.uniform_buffer_needs_update = true;
+    }
+
+    /// Update the data sent to the GPU.
+    pub fn update_gpu_data(&mut self, queue: &wgpu::Queue) {
+        if self.uniform_buffer_needs_update {
+            queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[self.uniform_data]));
+            self.uniform_buffer_needs_update = false;
         }
     }
 }

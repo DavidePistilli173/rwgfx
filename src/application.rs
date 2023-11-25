@@ -109,7 +109,12 @@ impl App {
     /// Propagate a window event to all widgets of the window.
     /// If the event was consumed, returns true, otherwise false.
     fn propagate_event(&mut self, event: &WindowEvent) -> bool {
-        //todo!();
+        for button in self.buttons.iter_mut() {
+            if button.consume_event(event) {
+                return true;
+            }
+        }
+
         false
     }
 
@@ -264,6 +269,9 @@ impl App {
                 label: Some("Render Encoder"),
             });
 
+        // Update the camera.
+        self.camera.update_gpu_data(&self.queue);
+
         // Render pass.
         {
             // Initialise the render pass.
@@ -293,7 +301,7 @@ impl App {
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
                 for button in self.buttons.iter() {
-                    button.draw(&mut render_pass);
+                    button.draw(&self.queue, &mut render_pass);
                 }
             }
         }
@@ -312,6 +320,14 @@ impl App {
             self.surface.configure(&self.device, &self.surface_config);
             self.depth_texture =
                 Texture::create_depth_texture(&self.device, &self.surface_config, "depth_texture");
+            self.camera.rebuild_orthographic(
+                0.0,
+                self.window_size.width as f32,
+                0.0,
+                self.window_size.height as f32,
+                0.0,
+                100.0,
+            );
         }
     }
 

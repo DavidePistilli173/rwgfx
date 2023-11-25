@@ -26,8 +26,8 @@ where
     }
 
     /// Get the current data value.
-    pub fn current(&self) -> T {
-        self.current
+    pub fn current(&self) -> &T {
+        &self.current
     }
 
     /// Create a new instance of the data, with no active animation.
@@ -44,6 +44,11 @@ where
     pub fn set_target(&mut self, target: T) {
         self.target = target;
         self.elapsed_time = Duration::milliseconds(0);
+    }
+
+    /// Get the animation target.
+    pub fn target(&self) -> &T {
+        &self.target
     }
 
     /// Update the state of the animated data as a function of time.

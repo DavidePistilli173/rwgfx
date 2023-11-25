@@ -6,6 +6,7 @@ struct CameraUniform {
 struct MeshUniform {
     position: vec2<f32>,
     z: f32,
+    overlay_alpha: f32,
     back_colour: vec4<f32>,
 }
 
@@ -35,5 +36,5 @@ fn vs_main(
 // Fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return mesh.back_colour;
+    return mesh.back_colour + vec4<f32>(1.0 * mesh.overlay_alpha, 1.0 * mesh.overlay_alpha, 1.0 * mesh.overlay_alpha, 0.0);
 }
