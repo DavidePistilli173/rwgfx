@@ -1,52 +1,19 @@
-//! Main GUI application.
+//! Main rendering context.
 
 use cgmath::{Point2, Vector2};
 use std::collections::HashMap;
-use std::{error::Error, fmt};
-use winit::event::{self, Event, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::{Window, WindowBuilder};
+use wgpu::SurfaceError;
 
 use crate::button::Button;
 use crate::camera::Camera;
+use crate::error::{ContextCreationError, RenderError};
 use crate::texture::Texture;
 use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
 use crate::{pipelines, vertex};
 
-/// Possible errors during window creation.
-#[derive(Debug, Copy, Clone)]
-pub enum AppCreationError {
-    /// Error while creating the window.
-    WindowCreation,
-    /// Error while creating the rendering surface.
-    SurfaceCreation,
-    /// Error while retrieving a compatible rendering device (graphics card or other).
-    NoPhysicalGraphicsDevice,
-    /// Error while creating a logical rendering device or the command queue.
-    DeviceOrQueueCreation,
-}
-
-impl Error for AppCreationError {}
-
-impl fmt::Display for AppCreationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Self::WindowCreation => write!(f, "Failed to create the window."),
-            Self::SurfaceCreation => write!(f, "Failed to create the rendering surface."),
-            Self::NoPhysicalGraphicsDevice => {
-                write!(f, "Failed to get a compatible physical rendering device.")
-            }
-            Self::DeviceOrQueueCreation => write!(
-                f,
-                "Failed to create a logical rendering device or a command queue."
-            ),
-        }
-    }
-}
-
-/// All data and code for a GUI application.
-pub struct App {
+/// All data and code for a rendering context.
+pub struct Context {
     /// Rendering surface.
     surface: wgpu::Surface,
     /// Graphics device.
@@ -56,7 +23,7 @@ pub struct App {
     /// Surface parameters.
     surface_config: wgpu::SurfaceConfiguration,
     /// Surface size.
-    window_size: winit::dpi::PhysicalSize<u32>,
+    window_size: Vector2<u32>,
     /// Clear colour.
     clear_color: wgpu::Color,
     /// Map of available rendering pipelines ordered by ID.
@@ -71,13 +38,9 @@ pub struct App {
     logger: rwlog::sender::Logger,
     /// Last time the main loop updated the application.
     last_update_time: chrono::DateTime<chrono::Local>,
-    /// Main event loop of the window.
-    event_loop: Option<EventLoop<()>>,
-    /// Window must be dropped after surface.
-    window: Window,
 }
 
-impl App {
+impl Context {
     fn create_default_render_pipelines(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
@@ -106,37 +69,36 @@ impl App {
         render_pipelines
     }
 
-    /// Propagate a window event to all widgets of the window.
-    /// If the event was consumed, returns true, otherwise false.
-    fn propagate_event(&mut self, event: &WindowEvent) -> bool {
-        for button in self.buttons.iter_mut() {
-            if button.consume_event(event) {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Create a new application with default initialisation.
-    pub fn new(logger: rwlog::sender::Logger) -> Result<Self, AppCreationError> {
-        pollster::block_on(App::new_internal(logger))
+    pub fn new<W>(
+        logger: rwlog::sender::Logger,
+        window: &W,
+        window_width: u32,
+        window_height: u32,
+    ) -> Result<Self, ContextCreationError>
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
+        pollster::block_on(Context::new_internal(
+            logger,
+            window,
+            window_width,
+            window_height,
+        ))
     }
 
     /// Utility private function for actually creating the application.
-    async fn new_internal(logger: rwlog::sender::Logger) -> Result<Self, AppCreationError> {
+    async fn new_internal<W>(
+        logger: rwlog::sender::Logger,
+        window: &W,
+        window_width: u32,
+        window_height: u32,
+    ) -> Result<Self, ContextCreationError>
+    where
+        W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
+    {
         // Necessary for wgpu error logging.
         env_logger::init();
-
-        // Create a new event loop.
-        let event_loop = EventLoop::new();
-
-        // Create the window.
-        let window = WindowBuilder::new().build(&event_loop).map_err(|err| {
-            rwlog::rel_err!(&logger, "Failed to create window: {err}.");
-            AppCreationError::WindowCreation
-        })?;
-        let window_size = window.inner_size();
 
         // Create the WGPU instance
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
@@ -147,7 +109,7 @@ impl App {
         // Create the rendering surface.
         let surface = unsafe { instance.create_surface(&window) }.map_err(|err| {
             rwlog::rel_err!(&logger, "Failed to create window surface: {err}.");
-            AppCreationError::SurfaceCreation
+            ContextCreationError::SurfaceCreation
         })?;
 
         // Get the physical graphics device.
@@ -160,7 +122,7 @@ impl App {
             .await
             .ok_or_else(|| {
                 rwlog::rel_err!(&logger, "Failed to get compatible graphics device.");
-                AppCreationError::NoPhysicalGraphicsDevice
+                ContextCreationError::NoPhysicalGraphicsDevice
             })?;
 
         // Get logical device and command queue from the graphics adapter.
@@ -183,7 +145,7 @@ impl App {
                     &logger,
                     "Failed to create logical graphics device and queue: {err}."
                 );
-                AppCreationError::DeviceOrQueueCreation
+                ContextCreationError::DeviceOrQueueCreation
             })?;
 
         // Configure the surface.
@@ -198,8 +160,8 @@ impl App {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: window_size.width,
-            height: window_size.height,
+            width: window_width,
+            height: window_height,
             present_mode: surface_capabilities.present_modes[0],
             alpha_mode: surface_capabilities.alpha_modes[0],
             view_formats: vec![],
@@ -214,16 +176,16 @@ impl App {
         let camera = Camera::new_orthographic(
             &device,
             0.0,
-            window_size.width as f32,
+            window_width as f32,
             0.0,
-            window_size.height as f32,
+            window_height as f32,
             0.0,
             100.0,
         );
 
         // Create the default render pipelines.
         let render_pipelines =
-            App::create_default_render_pipelines(&device, &surface_config, &camera);
+            Context::create_default_render_pipelines(&device, &surface_config, &camera);
 
         // Create a test button.
         let button = Button::new(
@@ -236,7 +198,6 @@ impl App {
         let buttons = vec![button];
 
         Ok(Self {
-            window,
             surface,
             device,
             queue,
@@ -253,13 +214,23 @@ impl App {
             buttons,
             logger,
             last_update_time: chrono::Local::now(),
-            window_size,
-            event_loop: Some(event_loop),
+            window_size: Vector2::<u32> {
+                x: window_width,
+                y: window_height,
+            },
         })
     }
 
-    fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let output = self.surface.get_current_texture()?;
+    pub fn render(&mut self) -> Result<(), RenderError> {
+        let output = self
+            .surface
+            .get_current_texture()
+            .map_err(|err| match err {
+                SurfaceError::Lost => RenderError::SurfaceInvalid,
+                SurfaceError::Outdated => RenderError::SurfaceInvalid,
+                SurfaceError::OutOfMemory => RenderError::OutOfMemory,
+                SurfaceError::Timeout => RenderError::GraphicsDeviceNotResponding,
+            })?;
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -312,26 +283,29 @@ impl App {
         Ok(())
     }
 
-    fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.window_size = new_size;
-            self.surface_config.width = new_size.width;
-            self.surface_config.height = new_size.height;
+    pub fn resize(&mut self, window_width: u32, window_height: u32) {
+        if window_width > 0 && window_height > 0 {
+            self.window_size = Vector2::<u32> {
+                x: window_width,
+                y: window_height,
+            };
+            self.surface_config.width = window_width;
+            self.surface_config.height = window_height;
             self.surface.configure(&self.device, &self.surface_config);
             self.depth_texture =
                 Texture::create_depth_texture(&self.device, &self.surface_config, "depth_texture");
             self.camera.rebuild_orthographic(
                 0.0,
-                self.window_size.width as f32,
+                self.window_size.x as f32,
                 0.0,
-                self.window_size.height as f32,
+                self.window_size.y as f32,
                 0.0,
                 100.0,
             );
         }
     }
 
-    fn update(&mut self) {
+    pub fn update(&mut self) {
         let current_time = chrono::Local::now();
         let delta_time = current_time - self.last_update_time;
         self.last_update_time = current_time;
@@ -339,55 +313,5 @@ impl App {
         for button in self.buttons.iter_mut() {
             button.update(&delta_time);
         }
-    }
-}
-
-/// Run the main loop of the application.
-pub fn run(mut app: App) {
-    if let Some(event_loop) = app.event_loop.take() {
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
-
-            // Process incoming events.
-            match event {
-                Event::WindowEvent {
-                    window_id,
-                    ref event,
-                } => {
-                    if window_id == app.window.id() && !app.propagate_event(&event) {
-                        match event {
-                            WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                            WindowEvent::Resized(physical_size) => app.resize(*physical_size),
-                            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                                app.resize(**new_inner_size)
-                            }
-                            _ => (),
-                        }
-                    }
-                }
-                Event::RedrawRequested(window_id) if window_id == app.window.id() => {
-                    match app.render() {
-                        Ok(_) => (),
-                        Err(wgpu::SurfaceError::Lost) => app.resize(app.window_size),
-                        Err(wgpu::SurfaceError::OutOfMemory) => {
-                            rwlog::rel_err!(&app.logger, "Not enough GPU memory!");
-                            *control_flow = ControlFlow::Exit;
-                        }
-                        Err(e) => {
-                            rwlog::warn!(&app.logger, "{e}");
-                        }
-                    };
-                }
-                Event::MainEventsCleared => {
-                    app.window.request_redraw();
-                }
-                _ => (),
-            }
-
-            // Update the application.
-            app.update();
-        });
-    } else {
-        rwlog::rel_fatal!(&app.logger, "Event loop not initialised.");
     }
 }

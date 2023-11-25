@@ -9,9 +9,10 @@
 //! ```
 
 pub mod animation;
-pub mod application;
 pub mod button;
 pub mod camera;
+pub mod context;
+pub mod error;
 pub mod pipelines;
 pub mod shader;
 pub mod texture;
