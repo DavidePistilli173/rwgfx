@@ -1,16 +1,24 @@
 //! Main rendering context.
 
-use cgmath::{Point2, Vector2};
+use cgmath::Vector2;
+use image::Frame;
 use std::collections::HashMap;
 use wgpu::SurfaceError;
 
-use crate::button::Button;
 use crate::camera::Camera;
 use crate::error::{ContextCreationError, RenderError};
 use crate::texture::Texture;
 use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
 use crate::{pipelines, vertex};
+
+/// Data of the current frame rendering.
+pub struct FrameContext<'a, 'b> {
+    /// Command queue used for the current frame.
+    pub queue: &'b wgpu::Queue,
+    /// Render pass used for the current frame.
+    pub render_pass: &'b mut wgpu::RenderPass<'a>,
+}
 
 /// All data and code for a rendering context.
 pub struct Context {
@@ -32,12 +40,8 @@ pub struct Context {
     depth_texture: Texture,
     /// Base camera.
     camera: Camera,
-    /// Buttons.
-    buttons: Vec<Button>,
     /// Logger.
     logger: rwlog::sender::Logger,
-    /// Last time the main loop updated the application.
-    last_update_time: chrono::DateTime<chrono::Local>,
 }
 
 impl Context {
@@ -67,6 +71,11 @@ impl Context {
         render_pipelines.insert(pipelines::ID_GENERAL, general_pipeline);
 
         render_pipelines
+    }
+
+    /// Get the graphics device that this context is using.
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
     }
 
     /// Create a new application with default initialisation.
@@ -187,16 +196,6 @@ impl Context {
         let render_pipelines =
             Context::create_default_render_pipelines(&device, &surface_config, &camera);
 
-        // Create a test button.
-        let button = Button::new(
-            &device,
-            Point2::<f32> { x: 350.0, y: 250.0 },
-            Vector2::<f32> { x: 100.0, y: 100.0 },
-            -75.0,
-            [0.5, 0.05, 0.05, 1.0],
-        );
-        let buttons = vec![button];
-
         Ok(Self {
             surface,
             device,
@@ -211,9 +210,7 @@ impl Context {
             render_pipelines,
             depth_texture,
             camera,
-            buttons,
             logger,
-            last_update_time: chrono::Local::now(),
             window_size: Vector2::<u32> {
                 x: window_width,
                 y: window_height,
@@ -221,7 +218,10 @@ impl Context {
         })
     }
 
-    pub fn render(&mut self) -> Result<(), RenderError> {
+    pub fn render<F>(&mut self, draw_calls: F) -> Result<(), RenderError>
+    where
+        F: Fn(u64, &mut FrameContext),
+    {
         let output = self
             .surface
             .get_current_texture()
@@ -271,9 +271,12 @@ impl Context {
                 render_pass.set_pipeline(&pipeline);
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
-                for button in self.buttons.iter() {
-                    button.draw(&self.queue, &mut render_pass);
-                }
+                let mut frame_context = FrameContext {
+                    queue: &self.queue,
+                    render_pass: &mut render_pass,
+                };
+
+                draw_calls(*id, &mut frame_context);
             }
         }
 
@@ -302,16 +305,6 @@ impl Context {
                 0.0,
                 100.0,
             );
-        }
-    }
-
-    pub fn update(&mut self) {
-        let current_time = chrono::Local::now();
-        let delta_time = current_time - self.last_update_time;
-        self.last_update_time = current_time;
-
-        for button in self.buttons.iter_mut() {
-            button.update(&delta_time);
         }
     }
 }
