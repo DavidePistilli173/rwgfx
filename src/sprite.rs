@@ -55,19 +55,23 @@ impl Sprite {
     }
 
     /// Draw the button.
-    pub fn draw<'a, 'b>(&'a self, queue: &wgpu::Queue, render_pass: &mut wgpu::RenderPass<'b>)
+    pub fn draw<'a, 'b>(&'a self, frame_context: &mut FrameContext<'b, 'a>)
     where
         'a: 'b,
     {
         // Update the vertex buffer.
         if *self.vertex_buffer_to_update.borrow() {
-            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.vertices));
+            frame_context.queue.write_buffer(
+                &self.vertex_buffer,
+                0,
+                bytemuck::cast_slice(&self.vertices),
+            );
             *self.vertex_buffer_to_update.borrow_mut() = false;
         }
 
         // Update the mesh uniform buffer.
         if *self.mesh_uniform_buffer_to_update.borrow() {
-            queue.write_buffer(
+            frame_context.queue.write_buffer(
                 &self.mesh_uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[self.mesh_uniform]),
@@ -76,10 +80,18 @@ impl Sprite {
         }
 
         // Perform the draw calls.
-        render_pass.set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+        frame_context
+            .render_pass
+            .set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
+        frame_context
+            .render_pass
+            .set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        frame_context
+            .render_pass
+            .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        frame_context
+            .render_pass
+            .draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 
     /// Create a new button.

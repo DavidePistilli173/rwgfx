@@ -228,7 +228,7 @@ impl Context {
 
     pub fn render<'a, F>(&'a mut self, draw_calls: F) -> Result<(), RenderError>
     where
-        F: for<'b> Fn(&wgpu::Queue, &mut RenderPass<'b>, [&'b &'a (); 0]),
+        F: for<'b, 'c> Fn(&mut FrameContext<'c, 'b>, [&'b &'a (); 0]),
     {
         let output = self
             .surface
@@ -285,7 +285,7 @@ impl Context {
                     render_pass: &mut render_pass,
                 };
 
-                draw_calls(&self.queue, &mut render_pass, []);
+                draw_calls(&mut frame_context, []);
             }
         }
 
