@@ -1,5 +1,7 @@
 //! Pipeline utility code and deafult pipeline IDs.
 
+/// Invalid pipeline ID.
+pub const ID_INVALID: u64 = 0;
 /// ID of the general pipeline.
 pub const ID_GENERAL: u64 = 1;
 

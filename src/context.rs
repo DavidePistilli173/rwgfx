@@ -12,12 +12,20 @@ use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
 use crate::{pipelines, vertex};
 
+pub use wgpu::Queue;
+pub use wgpu::RenderPass;
+
 /// Data of the current frame rendering.
-pub struct FrameContext<'a, 'b> {
+pub struct FrameContext<'a, 'b>
+where
+    'b: 'a,
+{
+    /// ID of the pipeline currently used for drawing.
+    pub pipeline_id: u64,
     /// Command queue used for the current frame.
-    pub queue: &'b wgpu::Queue,
+    pub queue: &'a wgpu::Queue,
     /// Render pass used for the current frame.
-    pub render_pass: &'b mut wgpu::RenderPass<'a>,
+    pub render_pass: &'a mut wgpu::RenderPass<'b>,
 }
 
 /// All data and code for a rendering context.
@@ -218,9 +226,9 @@ impl Context {
         })
     }
 
-    pub fn render<F>(&mut self, draw_calls: F) -> Result<(), RenderError>
+    pub fn render<'a, F>(&'a mut self, draw_calls: F) -> Result<(), RenderError>
     where
-        F: Fn(u64, &mut FrameContext),
+        F: for<'b> Fn(&wgpu::Queue, &mut RenderPass<'b>, [&'b &'a (); 0]),
     {
         let output = self
             .surface
@@ -272,14 +280,16 @@ impl Context {
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
                 let mut frame_context = FrameContext {
+                    pipeline_id: *id,
                     queue: &self.queue,
                     render_pass: &mut render_pass,
                 };
 
-                draw_calls(*id, &mut frame_context);
+                draw_calls(&self.queue, &mut render_pass, []);
             }
         }
 
+        // Submit the rendering queue and present the output image.
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
