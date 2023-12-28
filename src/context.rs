@@ -2,15 +2,16 @@
 
 use cgmath::Vector2;
 use image::Frame;
+use rwlog::rel_err;
 use std::collections::HashMap;
 use wgpu::SurfaceError;
 
 use crate::camera::Camera;
 use crate::error::{ContextCreationError, RenderError};
-use crate::texture::Texture;
+use crate::texture::{self, Texture};
 use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
-use crate::{pipelines, vertex};
+use crate::{pipeline, vertex};
 
 pub use wgpu::Queue;
 pub use wgpu::RenderPass;
@@ -23,9 +24,11 @@ where
     /// ID of the pipeline currently used for drawing.
     pub pipeline_id: u64,
     /// Command queue used for the current frame.
-    pub queue: &'a wgpu::Queue,
+    pub queue: &'b wgpu::Queue,
     /// Render pass used for the current frame.
     pub render_pass: &'a mut wgpu::RenderPass<'b>,
+    /// Textures loaded and ready to be used in the current frame.
+    pub textures: &'b HashMap<u64, Texture>,
 }
 
 /// All data and code for a rendering context.
@@ -46,6 +49,8 @@ pub struct Context {
     render_pipelines: HashMap<u64, wgpu::RenderPipeline>,
     /// Texture used for depth testing.
     depth_texture: Texture,
+    /// Map of available textures ordered by ID.
+    textures: HashMap<u64, Texture>,
     /// Base camera.
     camera: Camera,
     /// Logger.
@@ -63,6 +68,7 @@ impl Context {
                 entries: &shader::general::MeshUniform::layout_descriptor(),
                 label: Some("mesh_bind_group_layout"),
             });
+        let texture_layout = Texture::bind_group_layout(device);
 
         let general_shader =
             device.create_shader_module(wgpu::include_wgsl!("shader/general.wgsl"));
@@ -71,14 +77,55 @@ impl Context {
             &surface_config,
             "shader/general.wgsl",
             general_shader,
-            &[&camera.bind_group_layout(), &mesh_uniform_layout],
-            &[vertex::Plain::desc()]
+            &[
+                &camera.bind_group_layout(),
+                &mesh_uniform_layout,
+                &texture_layout
+            ],
+            &[vertex::Textured::desc()]
         );
 
         let mut render_pipelines = HashMap::new();
-        render_pipelines.insert(pipelines::ID_GENERAL, general_pipeline);
+        render_pipelines.insert(pipeline::ID_GENERAL, general_pipeline);
 
         render_pipelines
+    }
+
+    /// Create the default texture objects.
+    fn create_default_textures(
+        logger: &rwlog::sender::Logger,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> HashMap<u64, Texture> {
+        let empty_data = include_bytes!("texture/empty.png");
+        let empty_tex = Texture::from_bytes(device, queue, empty_data, "empty");
+
+        let hamburger_data = include_bytes!("texture/hamburger.png");
+        let hamburger_tex = Texture::from_bytes(device, queue, hamburger_data, "hamburger");
+
+        let mut textures = HashMap::new();
+
+        if let Ok(tex) = empty_tex {
+            textures.insert(texture::ID_EMPTY, tex);
+        } else {
+            rel_err!(
+                &logger,
+                "Failed to load default texture: empty: {}",
+                empty_tex.err().unwrap()
+            );
+        }
+
+        if let Ok(tex) = hamburger_tex {
+            textures.insert(texture::ID_HAMBURGER, tex);
+        } else {
+            rel_err!(
+                &logger,
+                "Failed to load default texture: hamburger: {}",
+                hamburger_tex.err().unwrap()
+            );
+        }
+
+        textures
     }
 
     /// Get the graphics device that this context is using.
@@ -189,6 +236,9 @@ impl Context {
         let depth_texture =
             Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
+        // Create the default textures.
+        let textures = Context::create_default_textures(&logger, &device, &queue);
+
         // Create the camera.
         let camera = Camera::new_orthographic(
             &device,
@@ -217,6 +267,7 @@ impl Context {
             },
             render_pipelines,
             depth_texture,
+            textures,
             camera,
             logger,
             window_size: Vector2::<u32> {
@@ -283,6 +334,7 @@ impl Context {
                     pipeline_id: *id,
                     queue: &self.queue,
                     render_pass: &mut render_pass,
+                    textures: &self.textures,
                 };
 
                 draw_calls(&mut frame_context, []);

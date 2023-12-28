@@ -12,7 +12,7 @@ pub mod animation;
 pub mod camera;
 pub mod context;
 pub mod error;
-pub mod pipelines;
+pub mod pipeline;
 pub mod shader;
 pub mod sprite;
 pub mod texture;
