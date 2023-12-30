@@ -8,7 +8,6 @@
 //! rwgfx::application::run(app);
 //! ```
 
-pub mod animation;
 pub mod camera;
 pub mod context;
 pub mod error;
