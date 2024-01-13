@@ -8,6 +8,7 @@
 //! rwgfx::application::run(app);
 //! ```
 
+pub mod asset;
 pub mod camera;
 pub mod context;
 pub mod error;
@@ -16,3 +17,6 @@ pub mod shader;
 pub mod sprite;
 pub mod texture;
 pub mod vertex;
+
+pub use wgpu::Queue;
+pub use wgpu::RenderPass;

@@ -1,11 +1,10 @@
 //! Main rendering context.
 
 use cgmath::Vector2;
-use image::Frame;
-use rwlog::rel_err;
 use std::collections::HashMap;
 use wgpu::SurfaceError;
 
+use crate::asset;
 use crate::camera::Camera;
 use crate::error::{ContextCreationError, RenderError};
 use crate::texture::{self, Texture};
@@ -13,22 +12,14 @@ use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
 use crate::{pipeline, vertex};
 
-pub use wgpu::Queue;
-pub use wgpu::RenderPass;
-
 /// Data of the current frame rendering.
-pub struct FrameContext<'a, 'b>
-where
-    'b: 'a,
-{
+pub struct FrameContext<'a> {
     /// ID of the pipeline currently used for drawing.
     pub pipeline_id: u64,
     /// Command queue used for the current frame.
-    pub queue: &'b wgpu::Queue,
-    /// Render pass used for the current frame.
-    pub render_pass: &'a mut wgpu::RenderPass<'b>,
-    /// Textures loaded and ready to be used in the current frame.
-    pub textures: &'b HashMap<u64, Texture>,
+    pub queue: &'a wgpu::Queue,
+    /// Graphics asset manager.
+    pub asset_manager: &'a asset::Manager,
 }
 
 /// All data and code for a rendering context.
@@ -49,10 +40,10 @@ pub struct Context {
     render_pipelines: HashMap<u64, wgpu::RenderPipeline>,
     /// Texture used for depth testing.
     depth_texture: Texture,
-    /// Map of available textures ordered by ID.
-    textures: HashMap<u64, Texture>,
     /// Base camera.
     camera: Camera,
+    /// Graphics asset manager.
+    asset_manager: asset::Manager,
     /// Logger.
     logger: rwlog::sender::Logger,
 }
@@ -91,41 +82,41 @@ impl Context {
         render_pipelines
     }
 
-    /// Create the default texture objects.
-    fn create_default_textures(
+    /// Create the asset manager and load the default assets.
+    fn create_default_assets(
         logger: &rwlog::sender::Logger,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-    ) -> HashMap<u64, Texture> {
+        include_default_textures: bool,
+    ) -> asset::Manager {
         let empty_data = include_bytes!("texture/empty.png");
-        let empty_tex = Texture::from_bytes(device, queue, empty_data, "empty");
 
-        let hamburger_data = include_bytes!("texture/hamburger.png");
-        let hamburger_tex = Texture::from_bytes(device, queue, hamburger_data, "hamburger");
+        let mut asset_manager = asset::Manager::new(logger.clone());
 
-        let mut textures = HashMap::new();
-
-        if let Ok(tex) = empty_tex {
-            textures.insert(texture::ID_EMPTY, tex);
-        } else {
-            rel_err!(
-                &logger,
-                "Failed to load default texture: empty: {}",
-                empty_tex.err().unwrap()
-            );
+        if !asset_manager.load_texture_from_bytes(
+            device,
+            queue,
+            empty_data,
+            texture::ID_EMPTY,
+            "empty",
+        ) {
+            rwlog::rel_fatal!(&logger, "Failed to embedded empty texture.");
         }
 
-        if let Ok(tex) = hamburger_tex {
-            textures.insert(texture::ID_HAMBURGER, tex);
-        } else {
-            rel_err!(
-                &logger,
-                "Failed to load default texture: hamburger: {}",
-                hamburger_tex.err().unwrap()
-            );
+        if include_default_textures {
+            let hamburger_data = include_bytes!("texture/hamburger.png");
+            if !asset_manager.load_texture_from_bytes(
+                device,
+                queue,
+                hamburger_data,
+                texture::ID_HAMBURGER,
+                "hamburger",
+            ) {
+                rwlog::rel_err!(&logger, "Failed to load embedded hamburger texture.");
+            }
         }
 
-        textures
+        asset_manager
     }
 
     /// Get the graphics device that this context is using.
@@ -139,6 +130,7 @@ impl Context {
         window: &W,
         window_width: u32,
         window_height: u32,
+        include_default_textures: bool,
     ) -> Result<Self, ContextCreationError>
     where
         W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
@@ -148,6 +140,7 @@ impl Context {
             window,
             window_width,
             window_height,
+            include_default_textures,
         ))
     }
 
@@ -157,6 +150,7 @@ impl Context {
         window: &W,
         window_width: u32,
         window_height: u32,
+        include_default_textures: bool,
     ) -> Result<Self, ContextCreationError>
     where
         W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
@@ -236,8 +230,9 @@ impl Context {
         let depth_texture =
             Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
-        // Create the default textures.
-        let textures = Context::create_default_textures(&logger, &device, &queue);
+        // Create the asset manager and load the default assets.
+        let asset_manager =
+            Context::create_default_assets(&logger, &device, &queue, include_default_textures);
 
         // Create the camera.
         let camera = Camera::new_orthographic(
@@ -267,7 +262,7 @@ impl Context {
             },
             render_pipelines,
             depth_texture,
-            textures,
+            asset_manager,
             camera,
             logger,
             window_size: Vector2::<u32> {
@@ -279,7 +274,7 @@ impl Context {
 
     pub fn render<'a, F>(&'a mut self, draw_calls: F) -> Result<(), RenderError>
     where
-        F: for<'b, 'c> Fn(&mut FrameContext<'c, 'b>, [&'b &'a (); 0]),
+        F: for<'b> Fn(&mut wgpu::RenderPass<'b>, &FrameContext<'a>, [&'b &'a (); 0]),
     {
         let output = self
             .surface
@@ -290,6 +285,7 @@ impl Context {
                 SurfaceError::OutOfMemory => RenderError::OutOfMemory,
                 SurfaceError::Timeout => RenderError::GraphicsDeviceNotResponding,
             })?;
+
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -326,18 +322,18 @@ impl Context {
             });
 
             // Iterate through all pipelines.
+            let mut frame_context = FrameContext {
+                pipeline_id: pipeline::ID_INVALID,
+                queue: &self.queue,
+                asset_manager: &self.asset_manager,
+            };
+
             for (id, pipeline) in self.render_pipelines.iter() {
+                frame_context.pipeline_id = *id;
                 render_pass.set_pipeline(&pipeline);
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
-                let mut frame_context = FrameContext {
-                    pipeline_id: *id,
-                    queue: &self.queue,
-                    render_pass: &mut render_pass,
-                    textures: &self.textures,
-                };
-
-                draw_calls(&mut frame_context, []);
+                draw_calls(&mut render_pass, &frame_context, []);
             }
         }
 

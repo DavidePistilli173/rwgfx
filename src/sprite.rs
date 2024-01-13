@@ -7,6 +7,7 @@ use crate::{texture, vertex};
 use cgmath::{Point2, Vector2};
 use std::cell::RefCell;
 use wgpu::util::DeviceExt;
+use wgpu::RenderPass;
 
 /// Index buffer data.
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
@@ -61,10 +62,7 @@ impl Sprite {
     }
 
     /// Draw the button.
-    pub fn draw<'a, 'b>(&'a self, frame_context: &mut FrameContext<'b, 'a>)
-    where
-        'a: 'b,
-    {
+    pub fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, frame_context: &FrameContext<'a>) {
         // Update the vertex buffer.
         if *self.vertex_buffer_to_update.borrow() {
             frame_context.queue.write_buffer(
@@ -85,27 +83,17 @@ impl Sprite {
             *self.mesh_uniform_buffer_to_update.borrow_mut() = false;
         }
 
-        let texture = frame_context
-            .textures
-            .get(&self.texture_id).unwrap_or(frame_context.textures.get(&texture::ID_EMPTY)
+        let asset_manager = frame_context.asset_manager;
+        let texture = asset_manager
+            .get_texture(self.texture_id).unwrap_or(asset_manager.get_texture(texture::ID_EMPTY)
             .expect("There should be at least the empty texture always loaded. If not, there is no way to make the program not crash."));
 
         // Perform the draw calls.
-        frame_context
-            .render_pass
-            .set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
-        frame_context
-            .render_pass
-            .set_bind_group(2, &texture.bind_group, &[]);
-        frame_context
-            .render_pass
-            .set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        frame_context
-            .render_pass
-            .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        frame_context
-            .render_pass
-            .draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+        render_pass.set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
+        render_pass.set_bind_group(2, &texture.bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 
     /// Create a new sprite.
@@ -185,5 +173,11 @@ impl Sprite {
     pub fn set_size(&mut self, size: Vector2<f32>) {
         self.vertices = Sprite::compute_vertices(&size);
         *self.vertex_buffer_to_update.borrow_mut() = true;
+    }
+
+    /// Set a new z index for the button.
+    pub fn set_z_index(&mut self, z_index: f32) {
+        self.mesh_uniform.z = z_index;
+        *self.mesh_uniform_buffer_to_update.borrow_mut() = true;
     }
 }
