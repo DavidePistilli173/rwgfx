@@ -10,11 +10,13 @@
 
 pub mod asset;
 pub mod camera;
-pub mod context;
+pub mod color;
 pub mod error;
 pub mod pipeline;
+pub mod renderer;
 pub mod shader;
 pub mod sprite;
+pub mod text;
 pub mod texture;
 pub mod vertex;
 

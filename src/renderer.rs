@@ -7,6 +7,7 @@ use wgpu::SurfaceError;
 use crate::asset;
 use crate::camera::Camera;
 use crate::error::{ContextCreationError, RenderError};
+use crate::text;
 use crate::texture::{self, Texture};
 use crate::vertex::Vertex;
 use crate::{create_default_render_pipeline, shader};
@@ -16,14 +17,20 @@ use crate::{pipeline, vertex};
 pub struct FrameContext<'a> {
     /// ID of the pipeline currently used for drawing.
     pub pipeline_id: u64,
+    /// Graphics device used for the current frame.
+    pub device: &'a wgpu::Device,
     /// Command queue used for the current frame.
     pub queue: &'a wgpu::Queue,
+    /// Size of the rendered window.
+    pub window_size: Vector2<u32>,
     /// Graphics asset manager.
     pub asset_manager: &'a asset::Manager,
+    /// Context for text rendering.
+    pub text_context: &'a mut text::Context,
 }
 
 /// All data and code for a rendering context.
-pub struct Context {
+pub struct Renderer {
     /// Rendering surface.
     surface: wgpu::Surface,
     /// Graphics device.
@@ -44,11 +51,14 @@ pub struct Context {
     camera: Camera,
     /// Graphics asset manager.
     asset_manager: asset::Manager,
+    /// Text rendering context.
+    text_context: text::Context,
     /// Logger.
     logger: rwlog::sender::Logger,
 }
 
-impl Context {
+impl Renderer {
+    /// Create the default rendering pipelines.
     fn create_default_render_pipelines(
         device: &wgpu::Device,
         surface_config: &wgpu::SurfaceConfiguration,
@@ -135,7 +145,7 @@ impl Context {
     where
         W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
     {
-        pollster::block_on(Context::new_internal(
+        pollster::block_on(Renderer::new_internal(
             logger,
             window,
             window_width,
@@ -232,7 +242,7 @@ impl Context {
 
         // Create the asset manager and load the default assets.
         let asset_manager =
-            Context::create_default_assets(&logger, &device, &queue, include_default_textures);
+            Renderer::create_default_assets(&logger, &device, &queue, include_default_textures);
 
         // Create the camera.
         let camera = Camera::new_orthographic(
@@ -247,7 +257,10 @@ impl Context {
 
         // Create the default render pipelines.
         let render_pipelines =
-            Context::create_default_render_pipelines(&device, &surface_config, &camera);
+            Renderer::create_default_render_pipelines(&device, &surface_config, &camera);
+
+        // Create the text rendering context.
+        let text_context = text::Context::new(&device, &queue, surface_format);
 
         Ok(Self {
             surface,
@@ -265,6 +278,7 @@ impl Context {
             asset_manager,
             camera,
             logger,
+            text_context,
             window_size: Vector2::<u32> {
                 x: window_width,
                 y: window_height,
@@ -274,7 +288,7 @@ impl Context {
 
     pub fn render<'a, F>(&'a mut self, draw_calls: F) -> Result<(), RenderError>
     where
-        F: for<'b> Fn(&mut wgpu::RenderPass<'b>, &FrameContext<'a>, [&'b &'a (); 0]),
+        F: for<'b> Fn(&mut wgpu::RenderPass<'b>, &'a mut FrameContext<'a>, [&'b &'a (); 0]),
     {
         let output = self
             .surface
@@ -324,8 +338,11 @@ impl Context {
             // Iterate through all pipelines.
             let mut frame_context = FrameContext {
                 pipeline_id: pipeline::ID_INVALID,
+                device: &self.device,
                 queue: &self.queue,
+                window_size: self.window_size,
                 asset_manager: &self.asset_manager,
+                text_context: &mut self.text_context,
             };
 
             for (id, pipeline) in self.render_pipelines.iter() {
@@ -333,7 +350,7 @@ impl Context {
                 render_pass.set_pipeline(&pipeline);
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
-                draw_calls(&mut render_pass, &frame_context, []);
+                draw_calls(&mut render_pass, &mut frame_context, []);
             }
         }
 
@@ -364,5 +381,10 @@ impl Context {
                 100.0,
             );
         }
+    }
+
+    /// Get the active text context.
+    pub fn text_context(&mut self) -> &mut text::Context {
+        &mut self.text_context
     }
 }

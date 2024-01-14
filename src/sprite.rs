@@ -1,6 +1,6 @@
 //! Basic graphics element.
 
-use crate::context::{Context, FrameContext};
+use crate::renderer::{FrameContext, Renderer};
 use crate::shader::general;
 use crate::shader::general::MeshUniform;
 use crate::{texture, vertex};
@@ -98,7 +98,7 @@ impl Sprite {
 
     /// Create a new sprite.
     pub fn new(
-        context: &Context,
+        renderer: &Renderer,
         position: Point2<f32>,
         size: Vector2<f32>,
         z_index: f32,
@@ -106,7 +106,7 @@ impl Sprite {
         texture_id: Option<u64>,
     ) -> Self {
         let vertices = Sprite::compute_vertices(&size);
-        let device = context.device();
+        let device = renderer.device();
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sprite vertex buffer"),
