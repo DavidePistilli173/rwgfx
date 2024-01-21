@@ -4,18 +4,20 @@ use std::{error::Error, fmt};
 
 /// Possible errors during context initialisation.
 #[derive(Debug, Copy, Clone)]
-pub enum ContextCreationError {
+pub enum RendererCreationError {
     /// Error while creating the rendering surface.
     SurfaceCreation,
     /// Error while retrieving a compatible rendering device (graphics card or other).
     NoPhysicalGraphicsDevice,
     /// Error while creating a logical rendering device or the command queue.
     DeviceOrQueueCreation,
+    /// Font library creation failed.
+    FontLibraryCreation,
 }
 
-impl Error for ContextCreationError {}
+impl Error for RendererCreationError {}
 
-impl fmt::Display for ContextCreationError {
+impl fmt::Display for RendererCreationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Self::SurfaceCreation => write!(f, "Failed to create the rendering surface."),
@@ -26,6 +28,7 @@ impl fmt::Display for ContextCreationError {
                 f,
                 "Failed to create a logical rendering device or a command queue."
             ),
+            Self::FontLibraryCreation => write!(f, "Failed to initialise the font library."),
         }
     }
 }

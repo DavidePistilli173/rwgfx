@@ -6,7 +6,7 @@ use wgpu::SurfaceError;
 
 use crate::asset;
 use crate::camera::Camera;
-use crate::error::{ContextCreationError, RenderError};
+use crate::error::{ContextCreationError, RenderError, RendererCreationError};
 use crate::text;
 use crate::texture::{self, Texture};
 use crate::vertex::Vertex;
@@ -25,8 +25,6 @@ pub struct FrameContext<'a> {
     pub window_size: Vector2<u32>,
     /// Graphics asset manager.
     pub asset_manager: &'a asset::Manager,
-    /// Context for text rendering.
-    pub text_context: &'a mut text::Context,
 }
 
 /// All data and code for a rendering context.
@@ -51,8 +49,8 @@ pub struct Renderer {
     camera: Camera,
     /// Graphics asset manager.
     asset_manager: asset::Manager,
-    /// Text rendering context.
-    text_context: text::Context,
+    /// Font library
+    font_library: freetype::library::Library,
     /// Logger.
     logger: rwlog::sender::Logger,
 }
@@ -97,8 +95,10 @@ impl Renderer {
         logger: &rwlog::sender::Logger,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        font_library: &freetype::library::Library,
         include_default_textures: bool,
     ) -> asset::Manager {
+        // Load textures.
         let empty_data = include_bytes!("texture/empty.png");
 
         let mut asset_manager = asset::Manager::new(logger.clone());
@@ -124,6 +124,16 @@ impl Renderer {
             ) {
                 rwlog::rel_err!(&logger, "Failed to load embedded hamburger texture.");
             }
+        }
+
+        // Load fonts.
+        if !asset_manager.load_font_from_file(
+            &font_library,
+            "font/gnu-free=font/FreeMono.ttf",
+            text::ID_DEFAULT,
+            &logger,
+        ) {
+            rwlog::fatal!(&logger, "Failed to load the default font.");
         }
 
         asset_manager
@@ -240,9 +250,20 @@ impl Renderer {
         let depth_texture =
             Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
+        // Create the font library.
+        let font_library = freetype::library::Library::init().map_err(|err| {
+            rwlog::err!(&logger, "Failed to initialise the font library: {err}.");
+            RendererCreationError::FontLibraryCreation
+        })?;
+
         // Create the asset manager and load the default assets.
-        let asset_manager =
-            Renderer::create_default_assets(&logger, &device, &queue, include_default_textures);
+        let asset_manager = Renderer::create_default_assets(
+            &logger,
+            &device,
+            &queue,
+            &font_library,
+            include_default_textures,
+        );
 
         // Create the camera.
         let camera = Camera::new_orthographic(
@@ -258,9 +279,6 @@ impl Renderer {
         // Create the default render pipelines.
         let render_pipelines =
             Renderer::create_default_render_pipelines(&device, &surface_config, &camera);
-
-        // Create the text rendering context.
-        let text_context = text::Context::new(&device, &queue, surface_format);
 
         Ok(Self {
             surface,
@@ -278,7 +296,7 @@ impl Renderer {
             asset_manager,
             camera,
             logger,
-            text_context,
+            font_library,
             window_size: Vector2::<u32> {
                 x: window_width,
                 y: window_height,
@@ -342,7 +360,6 @@ impl Renderer {
                 queue: &self.queue,
                 window_size: self.window_size,
                 asset_manager: &self.asset_manager,
-                text_context: &mut self.text_context,
             };
 
             for (id, pipeline) in self.render_pipelines.iter() {
@@ -381,10 +398,5 @@ impl Renderer {
                 100.0,
             );
         }
-    }
-
-    /// Get the active text context.
-    pub fn text_context(&mut self) -> &mut text::Context {
-        &mut self.text_context
     }
 }

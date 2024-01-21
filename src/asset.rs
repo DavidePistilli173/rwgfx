@@ -1,11 +1,10 @@
 //! Asset management (loading/unloading/retrieval).
 
-use rwlog::sender;
+use freetype::face::Face;
 use rwlog::sender::Logger;
+use std::collections::HashMap;
 
 use crate::texture::Texture;
-use glyphon::FontSystem;
-use std::collections::HashMap;
 
 /// Asset manager.
 pub struct Manager {
@@ -13,14 +12,35 @@ pub struct Manager {
     logger: Logger,
     /// Map of available textures ordered by ID.
     textures: HashMap<u64, Texture>,
-    /// Collection of available fonts.
-    font_system: FontSystem,
+    /// Collection of available fonts ordered by ID.
+    fonts: HashMap<u64, Face>,
 }
 
 impl Manager {
     /// Get a texture with a given ID, if available.
     pub fn get_texture(&self, id: u64) -> Option<&Texture> {
         self.textures.get(&id)
+    }
+
+    /// Load a font from a TTF file.
+    /// Return true if the font was loaded successfully, false otherwise.
+    pub fn load_font_from_file(
+        &mut self,
+        font_library: &freetype::library::Library,
+        path: &str,
+        id: u64,
+        logger: &Logger,
+    ) -> bool {
+        match font_library.new_face(path, 0) {
+            Ok(font) => {
+                self.fonts.insert(id, font);
+                true
+            }
+            Err(err) => {
+                rwlog::err!(logger, "Failed to load font {path}: {err}.");
+                false
+            }
+        }
     }
 
     /// Load a texture object into memory from raw bytes.
@@ -48,12 +68,12 @@ impl Manager {
         }
     }
 
-    /// Create a new asset manager with no assets loaded, except for the system fonts.
+    /// Create a new asset manager with no assets loaded.
     pub fn new(logger: Logger) -> Self {
         Self {
             logger,
             textures: HashMap::new(),
-            font_system: FontSystem::new(),
+            fonts: HashMap::new(),
         }
     }
 }

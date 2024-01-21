@@ -1,54 +1,15 @@
 //! Text rendering context and objects.
 
 use cgmath::{Point2, Vector2};
-use glyphon::{
-    Buffer, FontSystem, Metrics, SwashCache, TextArea, TextAtlas, TextBounds, TextRenderer,
-};
 
 use crate::color;
-use crate::pipeline;
 use crate::renderer::{FrameContext, Renderer};
 use crate::RenderPass;
 
-/// Text rendering context.
-pub struct Context {
-    /// Set of loaded fonts.
-    font_system: FontSystem,
-    /// Rasterizer cache.
-    swash_cache: SwashCache,
-    /// Pre-rasterized glyphs.
-    text_atlas: TextAtlas,
-    /// Renderer.
-    text_renderer: TextRenderer,
-}
-
-impl Context {
-    /// Create a new text rendering context.
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
-        let mut text_atlas = TextAtlas::new(device, queue, format);
-        let text_renderer = TextRenderer::new(
-            &mut text_atlas,
-            device,
-            pipeline::default_multisample_state(),
-            Some(pipeline::default_depth_stencil_state()),
-        );
-
-        Self {
-            font_system: FontSystem::new(),
-            swash_cache: SwashCache::new(),
-            text_atlas,
-            text_renderer,
-        }
-    }
-
-    /// Render the text that was prepared in the current frame.
-    pub fn render<'a>(
-        &'a self,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) -> Result<(), glyphon::RenderError> {
-        self.text_renderer.render(&self.text_atlas, render_pass)
-    }
-}
+/// Invalid font ID.
+pub const ID_INVALID: u64 = 0;
+/// ID of the default font.
+pub const ID_DEFAULT: u64 = 1;
 
 /// Data required for creating a text object.
 pub struct TextDescriptor<'a> {
