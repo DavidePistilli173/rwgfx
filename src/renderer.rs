@@ -6,7 +6,7 @@ use wgpu::SurfaceError;
 
 use crate::asset;
 use crate::camera::Camera;
-use crate::error::{ContextCreationError, RenderError, RendererCreationError};
+use crate::error::{AssetCreationError, RenderError, RendererCreationError};
 use crate::text;
 use crate::texture::{self, Texture};
 use crate::vertex::Vertex;
@@ -49,8 +49,6 @@ pub struct Renderer {
     camera: Camera,
     /// Graphics asset manager.
     asset_manager: asset::Manager,
-    /// Font library
-    font_library: freetype::library::Library,
     /// Logger.
     logger: rwlog::sender::Logger,
 }
@@ -95,23 +93,9 @@ impl Renderer {
         logger: &rwlog::sender::Logger,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        font_library: &freetype::library::Library,
         include_default_textures: bool,
-    ) -> asset::Manager {
-        // Load textures.
-        let empty_data = include_bytes!("texture/empty.png");
-
-        let mut asset_manager = asset::Manager::new(logger.clone());
-
-        if !asset_manager.load_texture_from_bytes(
-            device,
-            queue,
-            empty_data,
-            texture::ID_EMPTY,
-            "empty",
-        ) {
-            rwlog::rel_fatal!(&logger, "Failed to embedded empty texture.");
-        }
+    ) -> Result<asset::Manager, AssetCreationError> {
+        let mut asset_manager = asset::Manager::new(logger.clone(), device, queue)?;
 
         if include_default_textures {
             let hamburger_data = include_bytes!("texture/hamburger.png");
@@ -126,17 +110,7 @@ impl Renderer {
             }
         }
 
-        // Load fonts.
-        if !asset_manager.load_font_from_file(
-            &font_library,
-            "font/gnu-free=font/FreeMono.ttf",
-            text::ID_DEFAULT,
-            &logger,
-        ) {
-            rwlog::fatal!(&logger, "Failed to load the default font.");
-        }
-
-        asset_manager
+        Ok(asset_manager)
     }
 
     /// Get the graphics device that this context is using.
@@ -151,7 +125,7 @@ impl Renderer {
         window_width: u32,
         window_height: u32,
         include_default_textures: bool,
-    ) -> Result<Self, ContextCreationError>
+    ) -> Result<Self, RendererCreationError>
     where
         W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
     {
@@ -171,7 +145,7 @@ impl Renderer {
         window_width: u32,
         window_height: u32,
         include_default_textures: bool,
-    ) -> Result<Self, ContextCreationError>
+    ) -> Result<Self, RendererCreationError>
     where
         W: raw_window_handle::HasRawWindowHandle + raw_window_handle::HasRawDisplayHandle,
     {
@@ -187,7 +161,7 @@ impl Renderer {
         // Create the rendering surface.
         let surface = unsafe { instance.create_surface(&window) }.map_err(|err| {
             rwlog::rel_err!(&logger, "Failed to create window surface: {err}.");
-            ContextCreationError::SurfaceCreation
+            RendererCreationError::SurfaceCreation
         })?;
 
         // Get the physical graphics device.
@@ -200,7 +174,7 @@ impl Renderer {
             .await
             .ok_or_else(|| {
                 rwlog::rel_err!(&logger, "Failed to get compatible graphics device.");
-                ContextCreationError::NoPhysicalGraphicsDevice
+                RendererCreationError::NoPhysicalGraphicsDevice
             })?;
 
         // Get logical device and command queue from the graphics adapter.
@@ -223,7 +197,7 @@ impl Renderer {
                     &logger,
                     "Failed to create logical graphics device and queue: {err}."
                 );
-                ContextCreationError::DeviceOrQueueCreation
+                RendererCreationError::DeviceOrQueueCreation
             })?;
 
         // Configure the surface.
@@ -250,20 +224,12 @@ impl Renderer {
         let depth_texture =
             Texture::create_depth_texture(&device, &surface_config, "depth_texture");
 
-        // Create the font library.
-        let font_library = freetype::library::Library::init().map_err(|err| {
-            rwlog::err!(&logger, "Failed to initialise the font library: {err}.");
-            RendererCreationError::FontLibraryCreation
-        })?;
-
         // Create the asset manager and load the default assets.
-        let asset_manager = Renderer::create_default_assets(
-            &logger,
-            &device,
-            &queue,
-            &font_library,
-            include_default_textures,
-        );
+        let asset_manager =
+            Renderer::create_default_assets(&logger, &device, &queue, include_default_textures)
+                .unwrap_or_else(|err| {
+                    rwlog::fatal!(&logger, "Failed to create the asset manager: {err}.");
+                });
 
         // Create the camera.
         let camera = Camera::new_orthographic(
@@ -296,7 +262,6 @@ impl Renderer {
             asset_manager,
             camera,
             logger,
-            font_library,
             window_size: Vector2::<u32> {
                 x: window_width,
                 y: window_height,
@@ -306,7 +271,7 @@ impl Renderer {
 
     pub fn render<'a, F>(&'a mut self, draw_calls: F) -> Result<(), RenderError>
     where
-        F: for<'b> Fn(&mut wgpu::RenderPass<'b>, &'a mut FrameContext<'a>, [&'b &'a (); 0]),
+        F: for<'b> Fn(&mut wgpu::RenderPass<'b>, &FrameContext<'a>, [&'b &'a (); 0]),
     {
         let output = self
             .surface
@@ -367,7 +332,7 @@ impl Renderer {
                 render_pass.set_pipeline(&pipeline);
                 render_pass.set_bind_group(0, self.camera.bind_group(), &[]);
 
-                draw_calls(&mut render_pass, &mut frame_context, []);
+                draw_calls(&mut render_pass, &frame_context, []);
             }
         }
 

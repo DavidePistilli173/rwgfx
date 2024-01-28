@@ -1,6 +1,9 @@
 //! Error types.
 
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt::{self, write},
+};
 
 /// Possible errors during context initialisation.
 #[derive(Debug, Copy, Clone)]
@@ -52,6 +55,26 @@ impl fmt::Display for RenderError {
             Self::SurfaceInvalid => write!(f, "The rendering surface has become invalid and it needs to be recreated (eg. by calling resize)."),
             Self::OutOfMemory => write!(f, "The graphics device has run out of memory."),
             Self::GraphicsDeviceNotResponding => write!(f, "The graphics device is not responding."),
+        }
+    }
+}
+
+/// Possible errors during asset loading.
+#[derive(Debug, Clone, Copy)]
+pub enum AssetCreationError {
+    /// The font library could not be initialised.
+    TextLibraryCreation,
+    /// Failed to load the default font.
+    DefaultFontLoading,
+}
+
+impl Error for AssetCreationError {}
+
+impl fmt::Display for AssetCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Self::TextLibraryCreation => write!(f, "Failed to initialise the font library."),
+            Self::DefaultFontLoading => write!(f, "Failed to load the default font."),
         }
     }
 }
