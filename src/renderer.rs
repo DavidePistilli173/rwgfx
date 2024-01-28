@@ -31,10 +31,8 @@ pub struct FrameContext<'a> {
 pub struct Renderer {
     /// Rendering surface.
     surface: wgpu::Surface,
-    /// Graphics device.
-    device: wgpu::Device,
-    /// Command queue.
-    queue: wgpu::Queue,
+    /// GPU computing context.
+    compute_ctx: rwcompute::Context,
     /// Surface parameters.
     surface_config: wgpu::SurfaceConfiguration,
     /// Surface size.
@@ -115,7 +113,7 @@ impl Renderer {
 
     /// Get the graphics device that this context is using.
     pub fn device(&self) -> &wgpu::Device {
-        &self.device
+        &self.compute_ctx.device()
     }
 
     /// Create a new application with default initialisation.
@@ -164,44 +162,23 @@ impl Renderer {
             RendererCreationError::SurfaceCreation
         })?;
 
-        // Get the physical graphics device.
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .ok_or_else(|| {
-                rwlog::rel_err!(&logger, "Failed to get compatible graphics device.");
-                RendererCreationError::NoPhysicalGraphicsDevice
-            })?;
-
-        // Get logical device and command queue from the graphics adapter.
-        let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    features: wgpu::Features::empty(),
-                    limits: if cfg!(target_arch = "wasm32") {
-                        wgpu::Limits::downlevel_webgl2_defaults()
-                    } else {
-                        wgpu::Limits::default()
-                    },
-                    label: None,
-                },
-                None,
-            )
-            .await
-            .map_err(|err| {
-                rwlog::rel_err!(
-                    &logger,
-                    "Failed to create logical graphics device and queue: {err}."
-                );
-                RendererCreationError::DeviceOrQueueCreation
-            })?;
+        // Create the graphics compute context.
+        let compute_ctx = rwcompute::Context::new(
+            logger.clone(),
+            Some(instance),
+            Some(&surface),
+            wgpu::Features::empty(),
+        )
+        .map_err(|err| {
+            rwlog::rel_err!(
+                &logger,
+                "Failed to create the graphics compute context: {err}."
+            );
+            RendererCreationError::GraphicsContextCreation
+        })?;
 
         // Configure the surface.
-        let surface_capabilities = surface.get_capabilities(&adapter);
+        let surface_capabilities = surface.get_capabilities(&compute_ctx.adapter());
         let surface_format = surface_capabilities
             .formats
             .iter()
@@ -218,22 +195,26 @@ impl Renderer {
             alpha_mode: surface_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
-        surface.configure(&device, &surface_config);
+        surface.configure(&compute_ctx.device(), &surface_config);
 
         // Create the depth texture.
         let depth_texture =
-            Texture::create_depth_texture(&device, &surface_config, "depth_texture");
+            Texture::create_depth_texture(&compute_ctx.device(), &surface_config, "depth_texture");
 
         // Create the asset manager and load the default assets.
-        let asset_manager =
-            Renderer::create_default_assets(&logger, &device, &queue, include_default_textures)
-                .unwrap_or_else(|err| {
-                    rwlog::fatal!(&logger, "Failed to create the asset manager: {err}.");
-                });
+        let asset_manager = Renderer::create_default_assets(
+            &logger,
+            &compute_ctx.device(),
+            &compute_ctx.queue(),
+            include_default_textures,
+        )
+        .unwrap_or_else(|err| {
+            rwlog::fatal!(&logger, "Failed to create the asset manager: {err}.");
+        });
 
         // Create the camera.
         let camera = Camera::new_orthographic(
-            &device,
+            &compute_ctx.device(),
             0.0,
             window_width as f32,
             0.0,
@@ -243,13 +224,15 @@ impl Renderer {
         );
 
         // Create the default render pipelines.
-        let render_pipelines =
-            Renderer::create_default_render_pipelines(&device, &surface_config, &camera);
+        let render_pipelines = Renderer::create_default_render_pipelines(
+            &compute_ctx.device(),
+            &surface_config,
+            &camera,
+        );
 
         Ok(Self {
             surface,
-            device,
-            queue,
+            compute_ctx,
             surface_config,
             clear_color: wgpu::Color {
                 r: 0.1,
@@ -286,14 +269,15 @@ impl Renderer {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let mut encoder =
+            self.compute_ctx
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Render Encoder"),
+                });
 
         // Update the camera.
-        self.camera.update_gpu_data(&self.queue);
+        self.camera.update_gpu_data(&self.compute_ctx.queue());
 
         // Render pass.
         {
@@ -321,8 +305,8 @@ impl Renderer {
             // Iterate through all pipelines.
             let mut frame_context = FrameContext {
                 pipeline_id: pipeline::ID_INVALID,
-                device: &self.device,
-                queue: &self.queue,
+                device: &self.compute_ctx.device(),
+                queue: &self.compute_ctx.queue(),
                 window_size: self.window_size,
                 asset_manager: &self.asset_manager,
             };
@@ -337,7 +321,9 @@ impl Renderer {
         }
 
         // Submit the rendering queue and present the output image.
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.compute_ctx
+            .queue()
+            .submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
@@ -351,9 +337,13 @@ impl Renderer {
             };
             self.surface_config.width = window_width;
             self.surface_config.height = window_height;
-            self.surface.configure(&self.device, &self.surface_config);
-            self.depth_texture =
-                Texture::create_depth_texture(&self.device, &self.surface_config, "depth_texture");
+            self.surface
+                .configure(&self.compute_ctx.device(), &self.surface_config);
+            self.depth_texture = Texture::create_depth_texture(
+                &self.compute_ctx.device(),
+                &self.surface_config,
+                "depth_texture",
+            );
             self.camera.rebuild_orthographic(
                 0.0,
                 self.window_size.x as f32,
