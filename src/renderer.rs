@@ -89,22 +89,25 @@ impl Renderer {
     /// Create the asset manager and load the default assets.
     fn create_default_assets(
         logger: &rwlog::sender::Logger,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        ctx: &rwcompute::Context,
         include_default_textures: bool,
     ) -> Result<asset::Manager, AssetCreationError> {
-        let mut asset_manager = asset::Manager::new(logger.clone(), device, queue)?;
+        let mut asset_manager = asset::Manager::new(logger.clone(), ctx)?;
 
         if include_default_textures {
-            let hamburger_data = include_bytes!("texture/hamburger.png");
-            if !asset_manager.load_texture_from_bytes(
-                device,
-                queue,
-                hamburger_data,
+            let hamburger_img = image::load_from_memory(include_bytes!("texture/hamburger.png"))
+                .map_err(|err| {
+                    rwlog::rel_err!(&logger, "Failed to load hamburger texture: {err}.");
+                    AssetCreationError::TextureLoading
+                })?;
+            if !asset_manager.load_texture_from_image(
+                ctx,
+                hamburger_img,
                 texture::ID_HAMBURGER,
                 "hamburger",
             ) {
                 rwlog::rel_err!(&logger, "Failed to load embedded hamburger texture.");
+                return Err(AssetCreationError::TextureLoading);
             }
         }
 
@@ -202,15 +205,11 @@ impl Renderer {
             Texture::create_depth_texture(&compute_ctx.device(), &surface_config, "depth_texture");
 
         // Create the asset manager and load the default assets.
-        let asset_manager = Renderer::create_default_assets(
-            &logger,
-            &compute_ctx.device(),
-            &compute_ctx.queue(),
-            include_default_textures,
-        )
-        .unwrap_or_else(|err| {
-            rwlog::fatal!(&logger, "Failed to create the asset manager: {err}.");
-        });
+        let asset_manager =
+            Renderer::create_default_assets(&logger, &compute_ctx, include_default_textures)
+                .unwrap_or_else(|err| {
+                    rwlog::fatal!(&logger, "Failed to create the asset manager: {err}.");
+                });
 
         // Create the camera.
         let camera = Camera::new_orthographic(

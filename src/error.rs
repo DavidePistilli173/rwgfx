@@ -1,6 +1,9 @@
 //! Error types.
 
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt::{self, write},
+};
 
 /// Possible errors during context initialisation.
 #[derive(Debug, Copy, Clone)]
@@ -57,6 +60,8 @@ pub enum AssetCreationError {
     TextLibraryCreation,
     /// Failed to load the default font.
     DefaultFontLoading,
+    /// Failed to load a texture.
+    TextureLoading,
 }
 
 impl Error for AssetCreationError {}
@@ -66,6 +71,7 @@ impl fmt::Display for AssetCreationError {
         match *self {
             Self::TextLibraryCreation => write!(f, "Failed to initialise the font library."),
             Self::DefaultFontLoading => write!(f, "Failed to load the default font."),
+            Self::TextureLoading => write!(f, "Failed to load texture."),
         }
     }
 }

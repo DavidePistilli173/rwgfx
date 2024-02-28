@@ -1,7 +1,10 @@
 //! Textures.
 
 use anyhow::*;
+use cgmath::Vector2;
 use image::GenericImageView;
+
+pub use wgpu::TextureFormat;
 
 /// Invalid texture ID.
 pub const ID_INVALID: u64 = 0;
@@ -138,23 +141,92 @@ impl Texture {
         }
     }
 
+    /// Utility function for creating a texture sampler.
+    fn create_sampler(device: &wgpu::Device) -> wgpu::Sampler {
+        device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        })
+    }
+
     /// Create a texture from a slice of raw bytes.
     pub fn from_bytes(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        ctx: &rwcompute::Context,
         bytes: &[u8],
+        size: Vector2<u32>,
+        format: TextureFormat,
         label: &str,
     ) -> Result<Self> {
-        let img = image::load_from_memory(bytes)?;
-        Self::from_image(device, queue, &img, Some(label))
+        let size = wgpu::Extent3d {
+            width: size.x,
+            height: size.y,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        ctx.queue().write_texture(
+            wgpu::ImageCopyTexture {
+                aspect: wgpu::TextureAspect::All,
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            bytes,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * size.width),
+                rows_per_image: Some(size.height),
+            },
+            size,
+        );
+
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let sampler = Self::create_sampler(ctx.device());
+
+        let bind_group_layout = Texture::bind_group_layout(ctx.device());
+        let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
+        Ok(Self {
+            texture,
+            view,
+            sampler,
+            bind_group,
+        })
     }
 
     /// Create a texture from an image.
     pub fn from_image(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        img: &image::DynamicImage,
-        label: Option<&str>,
+        ctx: &rwcompute::Context,
+        img: image::DynamicImage,
+        label: &str,
     ) -> Result<Self> {
         let rgba = img.to_rgba8();
         let dimensions = img.dimensions();
@@ -164,8 +236,8 @@ impl Texture {
             height: dimensions.1,
             depth_or_array_layers: 1,
         };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
+        let texture = ctx.device().create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -175,7 +247,7 @@ impl Texture {
             view_formats: &[],
         });
 
-        queue.write_texture(
+        ctx.queue().write_texture(
             wgpu::ImageCopyTexture {
                 aspect: wgpu::TextureAspect::All,
                 texture: &texture,
@@ -192,18 +264,10 @@ impl Texture {
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Nearest,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            ..Default::default()
-        });
+        let sampler = Self::create_sampler(ctx.device());
 
-        let bind_group_layout = Texture::bind_group_layout(device);
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group_layout = Texture::bind_group_layout(ctx.device());
+        let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {

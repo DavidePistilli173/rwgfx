@@ -1,14 +1,14 @@
 //! Text rendering context and objects.
 
 use cgmath::{Point2, Vector2};
-use freetype::face::Face;
+use freetype::face::{Face, LoadFlag};
 use rwlog::sender::Logger;
 use std::collections::HashMap;
 
 use crate::color;
 use crate::error::AssetCreationError;
 use crate::renderer::{FrameContext, Renderer};
-use crate::texture::Texture;
+use crate::texture::{Texture, TextureFormat};
 use crate::RenderPass;
 
 /// Invalid font ID.
@@ -40,7 +40,11 @@ pub struct TextHandler {
 }
 
 impl TextHandler {
-    pub fn new(logger: &Logger, default_font_path: &str) -> Result<Self, AssetCreationError> {
+    pub fn new(
+        logger: &Logger,
+        default_font_path: &str,
+        ctx: &rwcompute::Context,
+    ) -> Result<Self, AssetCreationError> {
         // Initialise the font library.
         let font_library = freetype::library::Library::init().map_err(|err| {
             rwlog::err!(&logger, "Failed to initialise the font library: {err}.");
@@ -64,7 +68,49 @@ impl TextHandler {
         let mut font_tables_vec: Vec<FontTable> = Vec::new();
         font_tables_vec.reserve(FONT_SIZE_MULTIPLIER.ilog2() as usize);
         while font_size <= MAX_START_FONT_SIZE {
-            default_font.set_pixel_sizes(0, font_size);
+            // Set the pixel size for the current iteration.
+            match default_font.set_pixel_sizes(0, font_size) {
+                Ok(_) => (),
+                Err(err) => {
+                    rwlog::rel_err!(
+                        &logger,
+                        "Failed to set the pixel size for the default font: {err}."
+                    );
+                    return Err(AssetCreationError::DefaultFontLoading);
+                }
+            }
+
+            // Generate bitmaps for all supported characters (currently ASCII only).
+            for char_idx in 0..127 {
+                match default_font.load_char(char_idx, LoadFlag::RENDER) {
+                    Ok(_) => (),
+                    Err(err) => {
+                        rwlog::rel_err!(&logger, "Failed to load character {}: {}.", char_idx, err);
+                        return Err(AssetCreationError::DefaultFontLoading);
+                    }
+                }
+
+                let char_tex = Texture::from_bytes(
+                    ctx,
+                    default_font.glyph().bitmap().buffer(),
+                    Vector2::<u32> {
+                        x: default_font.glyph().bitmap().width() as u32,
+                        y: default_font.glyph().bitmap().rows() as u32,
+                    },
+                    TextureFormat::R8Uint,
+                    "CharacterTexture",
+                )
+                .map_err(|err| {
+                    rwlog::rel_err!(
+                        &logger,
+                        "Failed to create character texture for character {}: {}.",
+                        char_idx,
+                        err
+                    );
+                    AssetCreationError::DefaultFontLoading
+                })?;
+            }
+
             font_size *= FONT_SIZE_MULTIPLIER;
         }
 
