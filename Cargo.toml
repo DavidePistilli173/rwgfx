@@ -11,7 +11,6 @@ bytemuck = { version = "1.14.0", features = ["derive"] }
 cgmath = "0.18.0"
 chrono = "0.4.31"
 env_logger = "0.10.0"
-freetype-rs = "0.35.0"
 image = { version = "0.24.7", default-features = false, features = [
     "png",
     "jpeg",
@@ -21,4 +20,5 @@ pollster = "0.3.0"
 raw-window-handle = "0.5.2"
 rwcompute = { path = "../rwcompute", version = "0.1.0" }
 rwlog = { path = "../rwlog", version = "0.1.0" }
+rusttype = { version = "0.9.3", features = ["gpu_cache"] }
 wgpu = "0.16.3"

@@ -13,6 +13,7 @@ pub const OPENGL_TO_WGPU_MATRIX: Matrix4<f32> = Matrix4::new(
 );
 
 /// 3D orthographic camera
+#[derive(Debug)]
 pub struct Camera {
     /// Nearest drawn Z coordinate.
     near: f32,

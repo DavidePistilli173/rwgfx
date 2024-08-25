@@ -1,13 +1,12 @@
 //! Basic graphics element.
 
-use crate::renderer::{FrameContext, Renderer};
+use crate::renderer::FrameCtx;
 use crate::shader::general;
 use crate::shader::general::MeshUniform;
-use crate::{texture, vertex};
+use crate::{asset, pipeline, texture, vertex};
 use cgmath::{Point2, Vector2};
 use std::cell::RefCell;
 use wgpu::util::DeviceExt;
-use wgpu::RenderPass;
 
 /// Index buffer data.
 const INDICES: &[u16] = &[0, 1, 2, 2, 3, 0];
@@ -62,10 +61,20 @@ impl Sprite {
     }
 
     /// Draw the button.
-    pub fn draw<'a>(&'a self, render_pass: &mut RenderPass<'a>, frame_context: &FrameContext<'a>) {
+    pub fn draw<'pass, 'ctx>(
+        &'pass self,
+        ctx: &'ctx FrameCtx<'pass>,
+        asset_manager: &'pass asset::Manager,
+    ) where
+        'pass: 'ctx,
+    {
+        if ctx.active_pipeline_id() != pipeline::ID_GENERAL {
+            return;
+        };
+
         // Update the vertex buffer.
         if *self.vertex_buffer_to_update.borrow() {
-            frame_context.queue.write_buffer(
+            ctx.gpu_ctx().queue().write_buffer(
                 &self.vertex_buffer,
                 0,
                 bytemuck::cast_slice(&self.vertices),
@@ -75,7 +84,7 @@ impl Sprite {
 
         // Update the mesh uniform buffer.
         if *self.mesh_uniform_buffer_to_update.borrow() {
-            frame_context.queue.write_buffer(
+            ctx.gpu_ctx().queue().write_buffer(
                 &self.mesh_uniform_buffer,
                 0,
                 bytemuck::cast_slice(&[self.mesh_uniform]),
@@ -83,22 +92,22 @@ impl Sprite {
             *self.mesh_uniform_buffer_to_update.borrow_mut() = false;
         }
 
-        let asset_manager = frame_context.asset_manager;
-        let texture = asset_manager
-            .get_texture(self.texture_id).unwrap_or(asset_manager.get_texture(texture::ID_EMPTY)
-            .expect("There should be at least the empty texture always loaded. If not, there is no way to make the program not crash."));
-
         // Perform the draw calls.
-        render_pass.set_bind_group(1, &self.mesh_uniform_bind_group, &[]);
-        render_pass.set_bind_group(2, &texture.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-        render_pass.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
+        ctx.bind_data(1, &self.mesh_uniform_bind_group);
+        ctx.bind_data(
+            2,
+            &asset_manager
+                .get_texture_or_default(self.texture_id)
+                .bind_group,
+        );
+        ctx.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        ctx.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        ctx.draw_indexed(0..INDICES.len() as u32, 0, 0..1);
     }
 
     /// Create a new sprite.
     pub fn new(
-        renderer: &Renderer,
+        ctx: &rwcompute::Context,
         position: Point2<f32>,
         size: Vector2<f32>,
         z_index: f32,
@@ -106,7 +115,7 @@ impl Sprite {
         texture_id: Option<u64>,
     ) -> Self {
         let vertices = Sprite::compute_vertices(&size);
-        let device = renderer.device();
+        let device = ctx.device();
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sprite vertex buffer"),

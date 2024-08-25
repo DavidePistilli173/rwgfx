@@ -56,10 +56,8 @@ impl fmt::Display for RenderError {
 /// Possible errors during asset loading.
 #[derive(Debug, Clone, Copy)]
 pub enum AssetCreationError {
-    /// The font library could not be initialised.
-    TextLibraryCreation,
-    /// Failed to load the default font.
-    DefaultFontLoading,
+    /// Failed to load a font.
+    FontLoading,
     /// Failed to load a texture.
     TextureLoading,
 }
@@ -69,8 +67,7 @@ impl Error for AssetCreationError {}
 impl fmt::Display for AssetCreationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::TextLibraryCreation => write!(f, "Failed to initialise the font library."),
-            Self::DefaultFontLoading => write!(f, "Failed to load the default font."),
+            Self::FontLoading => write!(f, "Failed to load the default font."),
             Self::TextureLoading => write!(f, "Failed to load texture."),
         }
     }

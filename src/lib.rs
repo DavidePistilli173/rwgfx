@@ -11,6 +11,7 @@
 pub mod asset;
 pub mod camera;
 pub mod color;
+pub mod drawable;
 pub mod error;
 pub mod pipeline;
 pub mod renderer;

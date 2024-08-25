@@ -4,8 +4,10 @@ use crate::texture::Texture;
 
 /// Invalid pipeline ID.
 pub const ID_INVALID: u64 = 0;
-/// ID of the general pipeline.
+/// ID of the general purpose pipeline.
 pub const ID_GENERAL: u64 = 1;
+/// ID of the text rendering pipeline.
+pub const ID_TEXT: u64 = 2;
 
 /// Get the default depth stencil state.
 pub fn default_depth_stencil_state() -> wgpu::DepthStencilState {

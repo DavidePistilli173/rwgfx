@@ -4,6 +4,7 @@ use anyhow::*;
 use cgmath::Vector2;
 use image::GenericImageView;
 
+pub use wgpu::Origin3d;
 pub use wgpu::TextureFormat;
 
 /// Invalid texture ID.
@@ -13,7 +14,22 @@ pub const ID_EMPTY: u64 = 1;
 /// Hamburger menu icon ID.
 pub const ID_HAMBURGER: u64 = 2;
 
+/// Get the appropriate data layout for a given texture format and size.
+fn image_data_layout(format: TextureFormat, extent: wgpu::Extent3d) -> wgpu::ImageDataLayout {
+    let (block_x, block_y) = format.block_dimensions();
+    let bytes_per_block = format.block_size(None).unwrap_or(0);
+    let bytes_per_row = Some(bytes_per_block * extent.width / block_x);
+    let rows_per_image = Some(extent.height / block_y);
+
+    wgpu::ImageDataLayout {
+        offset: 0,
+        bytes_per_row,
+        rows_per_image,
+    }
+}
+
 /// Structure containing texture information.
+#[derive(Debug)]
 pub struct Texture {
     /// Actual texture.
     pub texture: wgpu::Texture,
@@ -23,6 +39,10 @@ pub struct Texture {
     pub sampler: wgpu::Sampler,
     /// Bind group.
     pub bind_group: wgpu::BindGroup,
+    /// Texture size.
+    pub size: wgpu::Extent3d,
+    /// Data format of the texture.
+    pub format: TextureFormat,
 }
 
 impl Texture {
@@ -30,7 +50,26 @@ impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     /// Get the bind group layout for a texture.
-    pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    pub fn bind_group_layout(
+        device: &wgpu::Device,
+        format: TextureFormat,
+    ) -> wgpu::BindGroupLayout {
+        let sample_type = format
+            .sample_type(None)
+            .unwrap_or(wgpu::TextureSampleType::default());
+
+        let sampler_binding_type = match sample_type {
+            wgpu::TextureSampleType::Depth => wgpu::SamplerBindingType::Comparison,
+            wgpu::TextureSampleType::Float { filterable: true } => {
+                wgpu::SamplerBindingType::Filtering
+            }
+            wgpu::TextureSampleType::Float { filterable: false } => {
+                wgpu::SamplerBindingType::NonFiltering
+            }
+            wgpu::TextureSampleType::Sint => wgpu::SamplerBindingType::Filtering,
+            wgpu::TextureSampleType::Uint => wgpu::SamplerBindingType::Filtering,
+        };
+
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -39,7 +78,7 @@ impl Texture {
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
                         view_dimension: wgpu::TextureViewDimension::D2,
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        sample_type,
                     },
                     count: None,
                 },
@@ -48,7 +87,7 @@ impl Texture {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     // This should match the filterable field of the
                     // corresponding Texture entry above.
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    ty: wgpu::BindingType::Sampler(sampler_binding_type),
                     count: None,
                 },
             ],
@@ -138,6 +177,8 @@ impl Texture {
             view,
             sampler,
             bind_group,
+            size,
+            format: Self::DEPTH_FORMAT,
         }
     }
 
@@ -187,18 +228,14 @@ impl Texture {
                 origin: wgpu::Origin3d::ZERO,
             },
             bytes,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * size.width),
-                rows_per_image: Some(size.height),
-            },
+            image_data_layout(format, size),
             size,
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = Self::create_sampler(ctx.device());
 
-        let bind_group_layout = Texture::bind_group_layout(ctx.device());
+        let bind_group_layout = Texture::bind_group_layout(ctx.device(), format);
         let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
@@ -211,7 +248,7 @@ impl Texture {
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
-            label: Some("diffuse_bind_group"),
+            label: Some(label),
         });
 
         Ok(Self {
@@ -219,6 +256,8 @@ impl Texture {
             view,
             sampler,
             bind_group,
+            size,
+            format,
         })
     }
 
@@ -255,18 +294,15 @@ impl Texture {
                 origin: wgpu::Origin3d::ZERO,
             },
             &rgba,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
-            },
+            image_data_layout(wgpu::TextureFormat::Rgba8UnormSrgb, size),
             size,
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let sampler = Self::create_sampler(ctx.device());
 
-        let bind_group_layout = Texture::bind_group_layout(ctx.device());
+        let bind_group_layout =
+            Texture::bind_group_layout(ctx.device(), wgpu::TextureFormat::Rgba8UnormSrgb);
         let bind_group = ctx.device().create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
             entries: &[
@@ -287,6 +323,36 @@ impl Texture {
             view,
             sampler,
             bind_group,
+            size,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
         })
+    }
+
+    /// Write new data to a texture.
+    /// The data must be in the same format as the texture.
+    pub fn write_data(
+        &self,
+        queue: &wgpu::Queue,
+        bytes: &[u8],
+        size: Vector2<u32>,
+        offset: Origin3d,
+    ) {
+        let size = wgpu::Extent3d {
+            width: size.x,
+            height: size.y,
+            depth_or_array_layers: 0,
+        };
+
+        queue.write_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: offset,
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytes,
+            image_data_layout(self.format, size),
+            size,
+        );
     }
 }

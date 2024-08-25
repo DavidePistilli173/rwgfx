@@ -5,7 +5,7 @@ use rwlog::sender::Logger;
 use std::collections::HashMap;
 use wgpu::TextureFormat;
 
-use crate::error::{self, AssetCreationError};
+use crate::error::AssetCreationError;
 use crate::text::TextHandler;
 use crate::texture;
 use crate::texture::Texture;
@@ -26,6 +26,13 @@ impl Manager {
         self.textures.get(&id)
     }
 
+    /// Get a texture with a given ID, if available, or the default texture.
+    pub fn get_texture_or_default(&self, id: u64) -> &Texture {
+        self
+            .get_texture(id).unwrap_or(self.get_texture(texture::ID_EMPTY)
+            .expect("There should be at least the empty texture always loaded. If not, there is no way to make the program not crash."))
+    }
+
     /// Load a texture object into memory from raw bytes.
     /// Return true if the texture was loaded successfully, false otherwise.
     pub fn load_texture_from_bytes(
@@ -42,7 +49,7 @@ impl Manager {
             self.textures.insert(id, tex);
             true
         } else {
-            rwlog::rel_err!(
+            rwlog::err!(
                 &self.logger,
                 "Failed to load texture {} from raw bytes: {}",
                 label,
@@ -64,7 +71,7 @@ impl Manager {
             self.textures.insert(id, tex);
             true
         } else {
-            rwlog::rel_err!(
+            rwlog::err!(
                 &self.logger,
                 "Failed to load texture {} from raw image: {}",
                 label,
@@ -76,7 +83,10 @@ impl Manager {
 
     /// Create a new asset manager with the default assets loaded.
     pub fn new(logger: Logger, ctx: &rwcompute::Context) -> Result<Self, AssetCreationError> {
-        let text_handler = TextHandler::new(&logger, "font/gnu-free=font/FreeMono.ttf", ctx)?;
+        let text_handler = TextHandler::new(&logger, ctx).map_err(|err| {
+            rwlog::err!(&logger, "Failed to create text handler: {err}.");
+            AssetCreationError::FontLoading
+        })?;
         let mut result = Self {
             logger,
             textures: HashMap::new(),
@@ -85,7 +95,7 @@ impl Manager {
 
         let empty_image =
             image::load_from_memory(include_bytes!("texture/empty.png")).map_err(|err| {
-                rwlog::rel_err!(
+                rwlog::err!(
                     &result.logger,
                     "Failed to load the empty image texture: {}.",
                     err
@@ -95,5 +105,40 @@ impl Manager {
         result.load_texture_from_image(ctx, empty_image, texture::ID_EMPTY, "empty");
 
         Ok(result)
+    }
+
+    /// Create the asset manager and load the default assets.
+    pub fn new_with_defaults(
+        logger: &rwlog::sender::Logger,
+        ctx: &rwcompute::Context,
+    ) -> Result<Self, AssetCreationError> {
+        let mut asset_manager = Manager::new(logger.clone(), ctx)?;
+
+        let hamburger_img = image::load_from_memory(include_bytes!("texture/hamburger.png"))
+            .map_err(|err| {
+                rwlog::err!(&logger, "Failed to load hamburger texture: {err}.");
+                AssetCreationError::TextureLoading
+            })?;
+        if !asset_manager.load_texture_from_image(
+            ctx,
+            hamburger_img,
+            texture::ID_HAMBURGER,
+            "hamburger",
+        ) {
+            rwlog::err!(&logger, "Failed to load embedded hamburger texture.");
+            return Err(AssetCreationError::TextureLoading);
+        }
+
+        Ok(asset_manager)
+    }
+
+    /// Get a reference to the text handler.
+    pub fn text_handler(&self) -> &TextHandler {
+        &self.text_handler
+    }
+
+    /// Get a mutable reference to the text handler.
+    pub fn text_handler_mut(&mut self) -> &mut TextHandler {
+        &mut self.text_handler
     }
 }
