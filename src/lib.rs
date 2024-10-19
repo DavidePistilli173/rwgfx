@@ -8,18 +8,11 @@
 //! rwgfx::application::run(app);
 //! ```
 
-pub mod asset;
-pub mod camera;
-pub mod color;
-pub mod drawable;
+#[macro_use]
+extern crate glium;
+
 pub mod error;
-pub mod pipeline;
+pub mod mesh;
 pub mod renderer;
 pub mod shader;
-pub mod sprite;
-pub mod text;
-pub mod texture;
 pub mod vertex;
-
-pub use wgpu::Queue;
-pub use wgpu::RenderPass;

@@ -1,19 +1,36 @@
-//! Error types.
+//! Errors for the rwgfx library.
 
-use std::{
-    error::Error,
-    fmt::{self, write},
-};
+use std::{error::Error, fmt};
 
-/// Possible errors during context initialisation.
+/// Possible errors during mesh creation.
+#[derive(Debug, Copy, Clone)]
+pub enum MeshCreationError {
+    /// Error while creating the vertex buffer.
+    VertexBufferCreation,
+    /// Error while creating the index buffer.
+    IndexBufferCreation,
+}
+
+impl Error for MeshCreationError {}
+
+impl fmt::Display for MeshCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Self::VertexBufferCreation => {
+                write!(f, "Failed to create the vertex buffer.")
+            }
+            Self::IndexBufferCreation => {
+                write!(f, "Failed to create the index buffer.")
+            }
+        }
+    }
+}
+
+/// Possible errors during renderer creation.
 #[derive(Debug, Copy, Clone)]
 pub enum RendererCreationError {
-    /// Error while creating the rendering surface.
-    SurfaceCreation,
-    /// Error while creating the graphics compute context.
-    GraphicsContextCreation,
-    /// Font library creation failed.
-    FontLibraryCreation,
+    /// Error while creating the default shaders.
+    ShaderCreation,
 }
 
 impl Error for RendererCreationError {}
@@ -21,54 +38,52 @@ impl Error for RendererCreationError {}
 impl fmt::Display for RendererCreationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::SurfaceCreation => write!(f, "Failed to create the rendering surface."),
-            Self::GraphicsContextCreation => {
-                write!(f, "Failed to create the graphics compute context.")
+            Self::ShaderCreation => {
+                write!(f, "Failed to create the default shaders.")
             }
-            Self::FontLibraryCreation => write!(f, "Failed to initialise the font library."),
         }
     }
 }
 
-/// Possible errors during rendering.
+/// Possible errors when adding a mesh to a renderer.
 #[derive(Debug, Copy, Clone)]
-pub enum RenderError {
-    /// The surface has become invalid and it needs to be recreated.
-    SurfaceInvalid,
-    /// The graphics device is out of memory.
-    OutOfMemory,
-    /// The graphics device is not responding.
-    GraphicsDeviceNotResponding,
+pub enum RendererAddMeshError {
+    /// The specified shader ID does not exist.
+    InvalidShader,
+    /// Failed to create the mesh.
+    MeshCreationFailed,
 }
 
-impl Error for RenderError {}
+impl Error for RendererAddMeshError {}
 
-impl fmt::Display for RenderError {
+impl fmt::Display for RendererAddMeshError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::SurfaceInvalid => write!(f, "The rendering surface has become invalid and it needs to be recreated (eg. by calling resize)."),
-            Self::OutOfMemory => write!(f, "The graphics device has run out of memory."),
-            Self::GraphicsDeviceNotResponding => write!(f, "The graphics device is not responding."),
+            Self::InvalidShader => {
+                write!(f, "The specified shader ID does not exist.")
+            }
+            Self::MeshCreationFailed => {
+                write!(f, "Failed to create the mesh.")
+            }
         }
     }
 }
 
-/// Possible errors during asset loading.
-#[derive(Debug, Clone, Copy)]
-pub enum AssetCreationError {
-    /// Failed to load a font.
-    FontLoading,
-    /// Failed to load a texture.
-    TextureLoading,
+/// Possible errors during shader creation.
+#[derive(Debug, Copy, Clone)]
+pub enum ShaderCreationError {
+    /// Error while creating the program from source.
+    FromSourceCreation,
 }
 
-impl Error for AssetCreationError {}
+impl Error for ShaderCreationError {}
 
-impl fmt::Display for AssetCreationError {
+impl fmt::Display for ShaderCreationError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Self::FontLoading => write!(f, "Failed to load the default font."),
-            Self::TextureLoading => write!(f, "Failed to load texture."),
+            Self::FromSourceCreation => {
+                write!(f, "Failed to create the shader from source.")
+            }
         }
     }
 }
