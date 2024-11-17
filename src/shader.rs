@@ -9,6 +9,8 @@ use crate::error::ShaderCreationError;
 /// Data required for creating a GPU shader program.
 #[derive(Debug)]
 pub struct ShaderDescriptor<'a> {
+    /// ID of the shader.
+    pub id: usize,
     /// Source code for the vertex shader.
     pub vertex_shader: &'a str,
     /// Source code for the fragment shader.
@@ -17,11 +19,18 @@ pub struct ShaderDescriptor<'a> {
 
 /// GPU shader program.
 pub struct Shader {
+    /// ID of the shader.
+    id: usize,
     /// GPU shader program.
     program: Program,
 }
 
 impl Shader {
+    /// Get the ID of the shader.
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
     /// Create a new GPU shader.
     pub fn new(
         display: &Display<WindowSurface>,
@@ -35,7 +44,10 @@ impl Shader {
         )
         .map_err(|_| ShaderCreationError::FromSourceCreation)?;
 
-        Ok(Shader { program })
+        Ok(Shader {
+            id: descriptor.id,
+            program,
+        })
     }
 
     /// Get the shader program handle.

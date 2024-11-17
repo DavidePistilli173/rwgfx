@@ -1,17 +1,31 @@
 //! Main rendering manager and API.
 
-use crate::error::{RendererAddMeshError, RendererCreationError, ShaderCreationError};
+use crate::command::RenderCmd;
+use crate::error::{
+    RendererAddMeshError, RendererCreationError, RendererUpdateMeshError, ShaderCreationError,
+};
 use crate::mesh::{Mesh, MeshDescriptor};
+use crate::render_interface::RenderInterface;
 use crate::shader::{Shader, ShaderDescriptor};
+use crate::vertex::Vertex;
+use crossbeam::atomic::AtomicCell;
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use glium::glutin::surface::WindowSurface;
 use glium::{Display, Surface};
 use rwlog::sender::Logger;
+use std::sync::Arc;
 
 /// Integrated UI shader.
 pub const SHADER_ID_UI: usize = 0;
 
+/// First available shader ID after reserved IDs.
+const SHADER_ID_START: usize = 100;
+/// First available mesh ID after reserved IDs.
+const MESH_ID_START: usize = 0;
+
 /// Parameters for the default shaders, in order of ID.
 const DEFAULT_SHADER_PARAMS: &'static [ShaderDescriptor] = &[ShaderDescriptor {
+    id: SHADER_ID_UI,
     vertex_shader: include_str!("shader/ui.vert"),
     fragment_shader: include_str!("shader/ui.frag"),
 }];
@@ -31,45 +45,24 @@ pub struct Renderer {
     display: Display<WindowSurface>,
     /// Logger.
     logger: Logger,
+    /// Channel for sending commands to the renderer. Used when creating new renderer interfaces.
+    sender_channel: Sender<RenderCmd>,
+    /// Channel for receiving commands to the renderer.
+    receiver_channel: Receiver<RenderCmd>,
     /// Available shaders and meshes for each shader.
     shaders_meshes: Vec<(Shader, Vec<Mesh>)>,
+    /// Next available ID for a shader.
+    next_shader_id: Arc<AtomicCell<usize>>,
+    /// Next available ID for a mesh.
+    next_mesh_id: Arc<AtomicCell<usize>>,
 }
 
 impl Renderer {
-    /// Add a mesh to the renderer and get back its ID.
-    /// # Arguments
-    /// * `shader_id` - ID of the shader that will be used for rendering the mesh.
-    /// * `descriptor` - Mesh creation parameters.
-    pub fn add_mesh(
-        &mut self,
-        shader_id: usize,
-        descriptor: &MeshDescriptor,
-    ) -> Result<(usize, usize), RendererAddMeshError> {
-        // Find the specified shader.
-        let shader = self
-            .shaders_meshes
-            .get_mut(shader_id)
-            .ok_or(RendererAddMeshError::InvalidShader)?;
-
-        // Create and add the mesh.
-        let mesh = Mesh::new(&self.display, descriptor).map_err(|e| {
-            rwlog::err!(&self.logger, "Failed to create a mesh: {e}.");
-            RendererAddMeshError::MeshCreationFailed
-        })?;
-        shader.1.push(mesh);
-
-        // Return the shader ID and the mesh ID.
-        Ok((shader_id, shader.1.len() - 1))
-    }
-
-    /// Add a shader to the renderer and get back its ID.
-    pub fn add_shader(
-        &mut self,
-        descriptor: &ShaderDescriptor,
-    ) -> Result<usize, ShaderCreationError> {
+    /// Create a new shader.
+    fn create_shader(&mut self, descriptor: &ShaderDescriptor) -> Result<(), ShaderCreationError> {
         let shader = Shader::new(&self.display, descriptor)?;
         self.shaders_meshes.push((shader, Vec::new()));
-        Ok(self.shaders_meshes.len() - 1)
+        Ok(())
     }
 
     /// Draw a single frame.
@@ -122,6 +115,8 @@ impl Renderer {
 
     /// Create a renderer from a window surface and return a handle that allows to send data and commands to the renderer.
     pub fn new(descriptor: RendererDescriptor) -> Result<Renderer, RendererCreationError> {
+        let (sender_channel, receiver_channel) = unbounded();
+
         let shaders_meshes = Renderer::init_shaders(&descriptor.logger, &descriptor.display)
             .map_err(|e| {
                 rwlog::err!(
@@ -134,12 +129,106 @@ impl Renderer {
         Ok(Renderer {
             display: descriptor.display,
             logger: descriptor.logger,
+            sender_channel,
+            receiver_channel,
             shaders_meshes,
+            next_shader_id: Arc::new(AtomicCell::new(SHADER_ID_START)),
+            next_mesh_id: Arc::new(AtomicCell::new(MESH_ID_START)),
         })
     }
 
-    /// Set the surface to draw on.
-    pub fn set_display(&mut self, display: Display<WindowSurface>) {
-        self.display = display;
+    /// Create a new interface to the renderer.
+    pub fn new_interface(&self) -> RenderInterface {
+        RenderInterface::new(
+            self.sender_channel.clone(),
+            self.next_shader_id.clone(),
+            self.next_mesh_id.clone(),
+        )
     }
+
+    /// Process all pending commands.
+    pub fn process_commands(&mut self) {
+        for cmd in self.receiver_channel.try_iter() {
+            match cmd {
+                RenderCmd::CreateMesh(mesh_data) => create_mesh(
+                    &self.logger,
+                    &self.display,
+                    &mut self.shaders_meshes,
+                    mesh_data.shader_id,
+                    &MeshDescriptor {
+                        id: mesh_data.mesh_id,
+                        vertices: mesh_data.vertices,
+                        indices: mesh_data.indices,
+                    },
+                )
+                .unwrap_or_else(|e| {
+                    rwlog::err!(&self.logger, "Failed to create a new mesh: {e}.");
+                }),
+                RenderCmd::UpdateMeshVertices(mesh_data) => update_mesh_vertices(
+                    &mut self.shaders_meshes,
+                    mesh_data.shader_id,
+                    mesh_data.mesh_id,
+                    &mesh_data.vertices,
+                )
+                .unwrap_or_else(|e| {
+                    rwlog::err!(&self.logger, "Failed to update mesh: {e}.");
+                }),
+            }
+        }
+    }
+
+    /// Resize the rendering frame.
+    pub fn resize(&mut self, new_size: (u32, u32)) {
+        self.display.resize(new_size);
+    }
+}
+
+/// Create a new mesh.
+fn create_mesh(
+    logger: &Logger,
+    display: &Display<WindowSurface>,
+    shaders_meshes: &mut Vec<(Shader, Vec<Mesh>)>,
+    shader_id: usize,
+    descriptor: &MeshDescriptor,
+) -> Result<(), RendererAddMeshError> {
+    // Find the specified shader.
+    let shader = shaders_meshes
+        .iter_mut()
+        .find(|s| s.0.id() == shader_id)
+        .ok_or(RendererAddMeshError::InvalidShader)?;
+
+    // Create and add the mesh.
+    let mesh = Mesh::new(display, descriptor).map_err(|e| {
+        rwlog::err!(logger, "Failed to create a mesh: {e}.");
+        RendererAddMeshError::MeshCreationFailed
+    })?;
+    shader.1.push(mesh);
+
+    Ok(())
+}
+
+/// Update the vertices of a mesh.
+fn update_mesh_vertices(
+    shaders_meshes: &mut Vec<(Shader, Vec<Mesh>)>,
+    shader_id: usize,
+    mesh_id: usize,
+    vertices: &Vec<Vertex>,
+) -> Result<(), RendererUpdateMeshError> {
+    // Find the specified shader.
+    let shader = shaders_meshes
+        .iter_mut()
+        .find(|s| s.0.id() == shader_id)
+        .ok_or(RendererUpdateMeshError::InvalidShader)?;
+
+    // Find the specified mesh.
+    let mesh = shader
+        .1
+        .iter_mut()
+        .find(|s| s.id() == mesh_id)
+        .ok_or(RendererUpdateMeshError::InvalidId)?;
+
+    // Update the mesh vertices.
+    mesh.update_vertex_buffer(vertices);
+
+    Ok(())
 }

@@ -69,6 +69,49 @@ impl fmt::Display for RendererAddMeshError {
     }
 }
 
+/// Possible errors when adding a mesh to a renderer.
+#[derive(Debug, Copy, Clone)]
+pub enum RendererUpdateMeshError {
+    /// The specified shader ID does not exist.
+    InvalidShader,
+    /// The specified mesh ID does not exist.
+    InvalidId,
+}
+
+impl Error for RendererUpdateMeshError {}
+
+impl fmt::Display for RendererUpdateMeshError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Self::InvalidShader => {
+                write!(f, "The specified shader ID does not exist.")
+            }
+            Self::InvalidId => {
+                write!(f, "The specified mesh ID does not exist.")
+            }
+        }
+    }
+}
+
+/// Possible errors when sending a command to the renderer.
+#[derive(Debug, Copy, Clone)]
+pub enum RenderInterfaceError {
+    /// Failed to send a command to the renderer.
+    CommunicationFailed,
+}
+
+impl Error for RenderInterfaceError {}
+
+impl fmt::Display for RenderInterfaceError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Self::CommunicationFailed => {
+                write!(f, "Failed to send a command to the renderer.")
+            }
+        }
+    }
+}
+
 /// Possible errors during shader creation.
 #[derive(Debug, Copy, Clone)]
 pub enum ShaderCreationError {

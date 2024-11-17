@@ -11,8 +11,11 @@
 #[macro_use]
 extern crate glium;
 
+pub mod command;
 pub mod error;
 pub mod mesh;
+pub mod render_interface;
 pub mod renderer;
 pub mod shader;
+pub mod sprite;
 pub mod vertex;
